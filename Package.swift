@@ -37,7 +37,7 @@ var packageDependencies: [Package.Dependency] = [
 
 if isApplePlatform {
   packageDependencies.append(
-    .package(url: "https://github.com/ml-explore/mlx-swift-lm", branch: "main"),
+    .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.31.3"),
   )
 }
 
