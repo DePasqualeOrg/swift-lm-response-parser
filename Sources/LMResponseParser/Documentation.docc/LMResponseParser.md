@@ -65,14 +65,15 @@ When the model makes a recoverable tool-call mistake, prefer returning an error 
 - ``ResponseCreatedEvent``
 - ``ResponseInProgressEvent``
 - ``ResponseCompletedEvent``
+- ``ResponseIncompleteEvent``
 - ``ResponseOutputItemAddedEvent``
 - ``ResponseOutputItemDoneEvent``
 - ``ResponseContentPartAddedEvent``
 - ``ResponseContentPartDoneEvent``
 - ``ResponseTextDeltaEvent``
 - ``ResponseTextDoneEvent``
-- ``ResponseReasoningTextDeltaEvent``
-- ``ResponseReasoningTextDoneEvent``
+- ``ResponseReasoningDeltaEvent``
+- ``ResponseReasoningDoneEvent``
 - ``ResponseFunctionCallArgumentsDeltaEvent``
 - ``ResponseFunctionCallArgumentsDoneEvent``
 

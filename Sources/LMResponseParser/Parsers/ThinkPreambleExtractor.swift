@@ -209,7 +209,7 @@ struct ThinkPreambleExtractor {
       openReasoning = r
       let seq = nextSequence
       nextSequence += 1
-      events.append(.reasoningTextDelta(.init(
+      events.append(.reasoningDelta(.init(
         itemId: r.id,
         outputIndex: r.outputIndex,
         contentIndex: 0,
@@ -262,7 +262,7 @@ struct ThinkPreambleExtractor {
     let seq3 = nextSequence
     nextSequence += 1
     return [
-      .reasoningTextDone(.init(
+      .reasoningDone(.init(
         itemId: r.id,
         outputIndex: r.outputIndex,
         contentIndex: 0,

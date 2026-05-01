@@ -285,7 +285,7 @@ struct InternlmParser: ResponseFormatParser {
       )))
     }
     events.append(.functionCallArgumentsDone(.init(
-      itemId: id, outputIndex: outputIndex, name: name, arguments: arguments, sequenceNumber: takeSequence(),
+      itemId: id, outputIndex: outputIndex, arguments: arguments, sequenceNumber: takeSequence(),
     )))
     events.append(.outputItemDone(.init(
       item: .functionCall(doneItem), outputIndex: outputIndex, sequenceNumber: takeSequence(),

@@ -256,7 +256,6 @@ struct JSONFallbackParser: ResponseFormatParser {
       .functionCallArgumentsDone(.init(
         itemId: itemId,
         outputIndex: outputIndex,
-        name: call.name,
         arguments: call.arguments,
         sequenceNumber: takeSequence(),
       )),

@@ -66,6 +66,17 @@ for event in stream.finalize(finishReason: .stop, inputTokens: promptTokenCount)
 }
 ```
 
+``ResponseStreamingEvent`` and the response/item/content values it carries conform to `Codable`. Encoding a streaming event produces the Open Responses wire shape with a `type` discriminator (for example `response.output_text.delta`) and snake-case fields such as `sequence_number`, `output_index`, and `item_id`:
+
+```swift
+let encoder = JSONEncoder()
+
+for event in stream.process(tokenId: token) {
+    let data = try encoder.encode(event)
+    sendSSE(data)
+}
+```
+
 ## Terminal Response
 
-After ``ResponseStream/finalize(finishReason:inputTokens:cachedInputTokens:reasoningOutputTokens:)`` returns, ``ResponseStream/finalResponse`` carries the terminal ``Response`` envelope with usage, status, and incomplete details. The same data is also available on the `responseCompleted` event for event-forwarding consumers.
+After ``ResponseStream/finalize(finishReason:inputTokens:cachedInputTokens:reasoningOutputTokens:)`` returns, ``ResponseStream/finalResponse`` carries the terminal ``Response`` envelope with usage, status, and incomplete details. The same data is also available on the terminal response event for event-forwarding consumers.

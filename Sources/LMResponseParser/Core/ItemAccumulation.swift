@@ -99,7 +99,7 @@ private func applyEvent(_ event: ResponseStreamingEvent, to items: inout [Respon
       guard e.outputIndex < items.count else { return }
       appendText(e.delta, atContentIndex: e.contentIndex, to: &items[e.outputIndex])
 
-    case let .reasoningTextDelta(e):
+    case let .reasoningDelta(e):
       guard e.outputIndex < items.count else { return }
       appendReasoningText(e.delta, atContentIndex: e.contentIndex, to: &items[e.outputIndex])
 
@@ -107,8 +107,9 @@ private func applyEvent(_ event: ResponseStreamingEvent, to items: inout [Respon
       guard e.outputIndex < items.count else { return }
       appendArguments(e.delta, to: &items[e.outputIndex])
 
-    case .contentPartDone, .outputTextDone, .reasoningTextDone,
-         .functionCallArgumentsDone, .responseCreated, .responseInProgress, .responseCompleted:
+    case .contentPartDone, .outputTextDone, .reasoningDone,
+         .functionCallArgumentsDone, .responseCreated, .responseInProgress, .responseCompleted,
+         .responseIncomplete:
       // The done events for inner content carry the final accumulated
       // value but it's already been built up via deltas; matching
       // `output_item.done` will overwrite the whole slot anyway.

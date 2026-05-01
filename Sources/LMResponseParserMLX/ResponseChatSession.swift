@@ -57,13 +57,13 @@ public final class ResponseChatSession {
   /// Useful for reading post-turn metadata that is not otherwise
   /// surfaced by ``streamResponseItems(prompt:role:images:videos:config:)``
   /// – in particular `Response.usage` (input/output token counts) and
-  /// `Response.status` (`completed` / `incomplete` /
-  /// `incompleteDetails`). For `streamResponseEvents`, the same data
-  /// is available on the `responseCompleted` event; this accessor is
-  /// the only path for items-style consumers.
+  /// `Response.status` (`completed` / `incomplete`) and
+  /// `incompleteDetails`. For `streamResponseEvents`, the same data is
+  /// available on the terminal response event; this accessor is the only
+  /// path for items-style consumers.
   ///
   /// Updated only after the consumer has been yielded the turn's
-  /// `responseCompleted` event. A silently closed turn (consumer
+  /// terminal response event. A silently closed turn (consumer
   /// cancellation) or a turn that throws an error does not update
   /// this accessor – the previously stored `Response` (if any)
   /// remains. Pair reads of `lastResponse` with the outcome of the
@@ -356,7 +356,7 @@ public final class ResponseChatSession {
   /// ``/LMResponseParser/Response``. Non-streaming convenience – drains
   /// ``streamResponseEvents(prompt:role:images:videos:config:)`` to
   /// completion and returns the ``/LMResponseParser/Response`` carried by
-  /// that turn's terminal `response.completed` event.
+  /// that turn's terminal response event.
   /// Mirrors `MLXLMCommon.ChatSession.respond(to:role:images:videos:)`.
   ///
   /// Throws whatever ``streamResponseEvents(prompt:role:images:videos:config:)``
@@ -384,8 +384,8 @@ public final class ResponseChatSession {
   ) async throws -> Response {
     var terminalResponse: Response?
     for try await event in stream {
-      if case let .responseCompleted(completed) = event {
-        terminalResponse = completed.response
+      if let response = event.terminalResponse {
+        terminalResponse = response
       }
     }
     guard let terminalResponse else {
@@ -653,18 +653,18 @@ public final class ResponseChatSession {
           )
           var terminalResponse: Response?
           for event in terminal {
-            if case let .responseCompleted(e) = event {
-              terminalResponse = e.response
+            if let response = event.terminalResponse {
+              terminalResponse = response
             }
           }
           for batch in transform(terminal) {
             continuation.yield(batch)
           }
           // Write the box *after* the consumer has had every
-          // `responseCompleted` event yielded to its
+          // terminal response event yielded to its
           // continuation. If a Task.cancellation lands between
           // the box write and the yield, the consumer would
-          // never observe `responseCompleted` yet
+          // never observe the terminal response event yet
           // `lastResponse` would be populated – the docstring's
           // "silently closed turn does not update this
           // accessor" contract would be violated. Yielding

@@ -53,7 +53,7 @@ package final class ResponseStreamEmitter {
 
   /// Items the emitter has seen flow through. Populated on
   /// `output_item.added` / `output_item.done` so the terminal
-  /// `response.completed` event can carry the canonical
+  /// response event can carry the canonical
   /// ``Response/output`` array.
   private var accumulatedItems: [ResponseOutputItem] = []
 
@@ -99,7 +99,7 @@ package final class ResponseStreamEmitter {
     return resequenceAndTrack(parserEvents)
   }
 
-  /// Flush parser state and yield the terminal `response.completed` event.
+  /// Flush parser state and yield the terminal response event.
   /// The parser is responsible for closing any open items with the right
   /// status; the emitter only translates the consumer's ``FinishInfo``
   /// into the response-level ``ResponseStatus`` and ``IncompleteDetails``
@@ -130,8 +130,17 @@ package final class ResponseStreamEmitter {
     snapshot.incompleteDetails = incompleteDetails
     snapshot.usage = usage
 
-    let completed = ResponseCompletedEvent(response: snapshot, sequenceNumber: takeSequence())
-    output.append(.responseCompleted(completed))
+    // Open Responses uses `response.incomplete` for max-output-token
+    // exhaustion. vLLM and SGLang currently emit `response.completed`
+    // with `status = incomplete`; this emitter stays spec-first.
+    switch info.finishReason {
+      case .length:
+        let incomplete = ResponseIncompleteEvent(response: snapshot, sequenceNumber: takeSequence())
+        output.append(.responseIncomplete(incomplete))
+      case .stop, .cancelled:
+        let completed = ResponseCompletedEvent(response: snapshot, sequenceNumber: takeSequence())
+        output.append(.responseCompleted(completed))
+    }
 
     phase = .finalized
     return output

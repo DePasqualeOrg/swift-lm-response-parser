@@ -39,13 +39,12 @@ package struct FinishInfo: Equatable {
 
 /// Why generation stopped.
 ///
-/// The emitter maps these to ``ResponseStatus`` on the terminal
-/// `response.completed` event:
+/// The emitter maps these to terminal events and ``ResponseStatus``:
 ///
-/// - ``stop`` → ``ResponseStatus/completed``
-/// - ``length`` → ``ResponseStatus/incomplete`` plus
+/// - ``stop`` → `response.completed` with ``ResponseStatus/completed``
+/// - ``length`` → `response.incomplete` with ``ResponseStatus/incomplete`` plus
 ///   ``IncompleteDetails`` with ``IncompleteReason/maxOutputTokens``
-/// - ``cancelled`` → ``ResponseStatus/cancelled``
+/// - ``cancelled`` → `response.completed` with ``ResponseStatus/cancelled``
 public enum FinishReason: String, Sendable, Equatable, CaseIterable {
   /// Model emitted a stop token (EOS or equivalent).
   case stop

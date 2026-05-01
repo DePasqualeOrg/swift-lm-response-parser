@@ -7,8 +7,10 @@ import Foundation
 /// The `reasoning_text` part is emitted inside the same
 /// `response.content_part.added/done` envelope as message text parts –
 /// reasoning items are not given their own envelope event type. This is
-/// what canonical client SDKs accumulate against; emitting a separate
-/// `reasoning_part` envelope would break their snapshot logic.
+/// what Open Responses specifies. vLLM currently emits a non-spec
+/// `response.reasoning_part.*` envelope for this shape; this library keeps
+/// the Open Responses envelope so canonical client SDKs accumulate the
+/// snapshot correctly.
 public enum ResponseContentPart: Sendable, Equatable {
   case outputText(ResponseOutputText)
   case refusal(ResponseOutputRefusal)
@@ -53,8 +55,10 @@ public struct ResponseOutputRefusal: Sendable, Equatable {
 /// A reasoning text part inside a reasoning item's content.
 ///
 /// Wrapped in the same `content_part.added/done` envelope as message text
-/// parts. The dedicated `response.reasoning_text.delta/done` events stream
-/// the actual deltas inside that envelope.
+/// parts. The dedicated `response.reasoning.delta/done` events stream
+/// the actual deltas inside that envelope. This intentionally differs from
+/// vLLM's `response.reasoning_part.*` helper events in favor of the Open
+/// Responses event union.
 public struct ReasoningTextContent: Sendable, Equatable {
   public var text: String
 

@@ -5,8 +5,8 @@ import LMResponseParser
 
 /// Aggregates per-pass MLX token counts plus reasoning-token attribution
 /// across multiple generation passes. The bridge constructs one
-/// ``FinishInfo`` for the terminal `response.completed` from the
-/// accumulator's totals.
+/// ``FinishInfo`` for the terminal response event from the accumulator's
+/// totals.
 ///
 /// **Pass-input summation is correct because** the bridge follows
 /// `ChatSession.streamMap`'s pattern: after each `prepare`, `messages` is
@@ -50,7 +50,7 @@ struct UsageAccumulator {
         case let .outputItemAdded(e):
           if case .reasoning = e.item { return true }
           return false
-        case .reasoningTextDelta:
+        case .reasoningDelta:
           return true
         default:
           return false

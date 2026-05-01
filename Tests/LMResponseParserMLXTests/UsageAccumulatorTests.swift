@@ -45,7 +45,7 @@ struct UsageAccumulatorTests {
     let reasoningItem = ResponseOutputItem.reasoning(.init(id: "rs_a"))
     let events: [ResponseStreamingEvent] = [
       .outputItemAdded(.init(item: reasoningItem, outputIndex: 0, sequenceNumber: 0)),
-      .reasoningTextDelta(.init(
+      .reasoningDelta(.init(
         itemId: "rs_a", outputIndex: 0, contentIndex: 0,
         delta: "thinking", sequenceNumber: 1,
       )),
@@ -64,7 +64,7 @@ struct UsageAccumulatorTests {
     usage.observe(
       events: [
         .outputItemAdded(.init(item: reasoningItem, outputIndex: 0, sequenceNumber: 0)),
-        .reasoningTextDelta(.init(
+        .reasoningDelta(.init(
           itemId: "rs_a", outputIndex: 0, contentIndex: 0,
           delta: "first", sequenceNumber: 1,
         )),
@@ -76,7 +76,7 @@ struct UsageAccumulatorTests {
     // reasoning item. 3 tokens.
     usage.observe(
       events: [
-        .reasoningTextDelta(.init(
+        .reasoningDelta(.init(
           itemId: "rs_a", outputIndex: 0, contentIndex: 0,
           delta: "second", sequenceNumber: 2,
         )),
@@ -89,7 +89,7 @@ struct UsageAccumulatorTests {
     // chunk 4 will be normal text.
     usage.observe(
       events: [
-        .reasoningTextDone(.init(
+        .reasoningDone(.init(
           itemId: "rs_a", outputIndex: 0, contentIndex: 0,
           text: "first second", sequenceNumber: 3,
         )),

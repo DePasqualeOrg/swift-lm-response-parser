@@ -266,7 +266,6 @@ public struct ResponseFunctionCallOutput: Sendable, Equatable {
       case low
       case high
       case auto
-      case original
     }
 
     /// A fully qualified URL, data URL, or local file URL for the image.

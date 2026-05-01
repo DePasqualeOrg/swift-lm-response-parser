@@ -407,7 +407,6 @@ struct Granite20bFcParser: ResponseFormatParser {
       .functionCallArgumentsDone(.init(
         itemId: call.id,
         outputIndex: outputIndex,
-        name: name,
         arguments: call.argsEmitted,
         sequenceNumber: takeSequence(),
       )),

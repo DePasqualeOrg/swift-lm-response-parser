@@ -2,7 +2,7 @@
 
 import Foundation
 
-/// The response-level status carried on `response.completed`.
+/// The response-level status carried on the terminal response event.
 ///
 /// The driver derives this from the upstream finish reason: `stop` →
 /// `completed`, `length` → `incomplete`, cancellation → `cancelled`. The
@@ -33,7 +33,7 @@ public struct IncompleteDetails: Sendable, Equatable {
   }
 }
 
-/// Token-usage breakdown carried on the terminal `response.completed` event.
+/// Token-usage breakdown carried on the terminal response event.
 public struct ResponseUsage: Sendable, Equatable {
   public var inputTokens: Int
   public var outputTokens: Int
@@ -74,13 +74,13 @@ public struct ResponseUsage: Sendable, Equatable {
 }
 
 /// The response-envelope object carried by `response.created`,
-/// `response.in_progress`, and `response.completed` events.
+/// `response.in_progress`, and terminal response events.
 ///
 /// Only the fields the parser layer can populate from local model output and
 /// `ResponseStreamConfig` are kept here. The hosted-API spec defines many more
 /// fields (`tool_choice`, `parallel_tool_calls`, `service_tier`,
-/// `safety_identifier`, …); those are server-product concerns and a higher-
-/// layer Responses-compatible server can attach them via wrapper callbacks.
+/// `safety_identifier`, …); those are server-product concerns. `Codable`
+/// encoding fills the required Open Responses wire defaults for those fields.
 public struct Response: Sendable, Equatable {
   /// Response-scoped ID (`resp_…`). Minted once at construction and reused
   /// on every envelope event.
@@ -94,12 +94,13 @@ public struct Response: Sendable, Equatable {
   public var model: String
 
   /// Items the parser emitted during the response. On `response.created`
-  /// and `response.in_progress` this is empty; on `response.completed` it
-  /// contains the accumulated items.
+  /// and `response.in_progress` this is empty; on the terminal response
+  /// event it contains the accumulated items.
   public var output: [ResponseOutputItem]
 
-  /// Response-level status. nil on `response.created` and `response.in_progress`,
-  /// set on `response.completed`.
+  /// Response-level status. `ResponseStream` emits `.inProgress` on
+  /// `response.created` and `response.in_progress`, then sets the terminal
+  /// status on the terminal response event.
   public var status: ResponseStatus?
 
   public var incompleteDetails: IncompleteDetails?

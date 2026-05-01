@@ -266,7 +266,7 @@ struct KimiK2Parser: ResponseFormatParser {
         if var r = openReasoning {
           r.emittedText += chunk
           openReasoning = r
-          events.append(.reasoningTextDelta(.init(
+          events.append(.reasoningDelta(.init(
             itemId: r.id,
             outputIndex: r.outputIndex,
             contentIndex: 0,
@@ -319,7 +319,7 @@ struct KimiK2Parser: ResponseFormatParser {
     openReasoning = nil
     let part = ReasoningTextContent(text: r.emittedText)
     return [
-      .reasoningTextDone(.init(
+      .reasoningDone(.init(
         itemId: r.id,
         outputIndex: r.outputIndex,
         contentIndex: 0,
@@ -550,7 +550,7 @@ struct KimiK2Parser: ResponseFormatParser {
     return [
       .functionCallArgumentsDone(.init(
         itemId: call.id, outputIndex: outputIndex,
-        name: name, arguments: call.argsEmitted, sequenceNumber: takeSequence(),
+        arguments: call.argsEmitted, sequenceNumber: takeSequence(),
       )),
       .outputItemDone(.init(
         item: .functionCall(doneItem), outputIndex: outputIndex, sequenceNumber: takeSequence(),

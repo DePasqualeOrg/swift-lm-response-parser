@@ -49,16 +49,16 @@ struct ResponseStreamEmitterLifecycleTests {
   }
 
   @Test
-  func `Length stop maps to incomplete + max_output_tokens`() {
+  func `Length stop emits response incomplete with max_output_tokens`() {
     let emitter = makeEmitter(parser: NoOpParser())
     _ = emitter.start()
     let final = emitter.finalize(info: FinishInfo(finishReason: .length, inputTokens: 5, outputTokens: 100))
 
-    guard case let .responseCompleted(completed) = final[0] else {
-      Issue.record("Expected responseCompleted"); return
+    guard case let .responseIncomplete(incomplete) = final[0] else {
+      Issue.record("Expected responseIncomplete"); return
     }
-    #expect(completed.response.status == .incomplete)
-    #expect(completed.response.incompleteDetails?.reason == .maxOutputTokens)
+    #expect(incomplete.response.status == .incomplete)
+    #expect(incomplete.response.incompleteDetails?.reason == .maxOutputTokens)
   }
 
   @Test

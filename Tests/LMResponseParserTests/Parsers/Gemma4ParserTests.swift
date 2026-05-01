@@ -392,7 +392,7 @@ struct Gemma4StreamingTests {
     }
     events += parser.finalize()
     let deltas = events.compactMap { ev -> String? in
-      if case let .reasoningTextDelta(e) = ev { return e.delta } else { return nil }
+      if case let .reasoningDelta(e) = ev { return e.delta } else { return nil }
     }
     #expect(deltas.joined() == "first second third")
   }
@@ -569,7 +569,7 @@ struct Gemma4AdversarialTests {
     }
     events += parser.finalize()
     let deltas = events.compactMap { ev -> String? in
-      if case let .reasoningTextDelta(e) = ev { return e.delta } else { return nil }
+      if case let .reasoningDelta(e) = ev { return e.delta } else { return nil }
     }
     #expect(deltas.joined() == "reasoning here")
   }

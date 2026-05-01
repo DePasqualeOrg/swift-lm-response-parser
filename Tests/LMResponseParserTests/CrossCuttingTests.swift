@@ -59,15 +59,15 @@ struct MessageEventOrderingTests {
 @Suite("Event ordering — reasoning item")
 struct ReasoningEventOrderingTests {
   @Test
-  func `Reasoning: added → content_part.added (reasoning_text part) → reasoning_text.delta+ → reasoning_text.done → content_part.done → item.done`() {
+  func `Reasoning: added → content_part.added (reasoning_text part) → reasoning delta+ → reasoning done → content_part.done → item.done`() {
     var parser = QwenParser()
     let events = parser.process(ParserInput(text: "<think>thinking...</think>")) + parser.finalize()
     let kinds = events.map { eventKind($0) }
     #expect(kinds == [
       "outputItemAdded",
       "contentPartAdded",
-      "reasoningTextDelta",
-      "reasoningTextDone",
+      "reasoningDelta",
+      "reasoningDone",
       "contentPartDone",
       "outputItemDone",
     ])

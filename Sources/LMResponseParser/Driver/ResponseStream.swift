@@ -76,7 +76,7 @@ public final class ResponseStream {
   }
 
   /// Terminal `Response` envelope (usage, status, incomplete details)
-  /// captured from the `response.completed` event. Nil until
+  /// captured from the terminal response event. Nil until
   /// ``finalize(finishReason:inputTokens:cachedInputTokens:reasoningOutputTokens:)``
   /// runs; populated synchronously inside that call. Mirrors
   /// `ResponseStreamHandle.finalResponse()` and
@@ -138,11 +138,11 @@ public final class ResponseStream {
     return events
   }
 
-  /// Flush parser state and yield the terminal `response.completed`
-  /// event. Use ``FinishReason/length`` instead of ``FinishReason/stop``
-  /// if generation hit `max_output_tokens`, and ``FinishReason/cancelled``
-  /// if the consumer cut the stream short – these map to the correct
-  /// `Response.status` and `incomplete_details`.
+  /// Flush parser state and yield the terminal response event. Use
+  /// ``FinishReason/length`` instead of ``FinishReason/stop`` if generation
+  /// hit `max_output_tokens`, and ``FinishReason/cancelled`` if the
+  /// consumer cut the stream short – these map to the correct terminal
+  /// event, `Response.status`, and `incomplete_details`.
   ///
   /// `inputTokens` is the prompt length the engine reported. The stream
   /// supplies `outputTokens` from its own ``generatedTokens`` count.
@@ -166,8 +166,8 @@ public final class ResponseStream {
     let events = emitter.finalize(info: info)
     accumulator.ingest(events)
     for event in events {
-      if case let .responseCompleted(e) = event {
-        finalResponse = e.response
+      if let response = event.terminalResponse {
+        finalResponse = response
       }
     }
     return events

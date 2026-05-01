@@ -384,7 +384,7 @@ struct DeepSeekV32Parser: ResponseFormatParser {
       )),
       .functionCallArgumentsDone(.init(
         itemId: id, outputIndex: outputIndex,
-        name: invoke.name, arguments: invoke.argumentsJSON,
+        arguments: invoke.argumentsJSON,
         sequenceNumber: takeSequence(),
       )),
       .outputItemDone(.init(

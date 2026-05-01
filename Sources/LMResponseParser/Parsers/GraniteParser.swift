@@ -436,7 +436,7 @@ struct GraniteParser: ResponseFormatParser {
     if var r = openReasoning {
       r.emittedText += text
       openReasoning = r
-      events.append(.reasoningTextDelta(.init(
+      events.append(.reasoningDelta(.init(
         itemId: r.id,
         outputIndex: r.outputIndex,
         contentIndex: 0,
@@ -468,7 +468,7 @@ struct GraniteParser: ResponseFormatParser {
     openReasoning = nil
     let part = ReasoningTextContent(text: r.emittedText)
     return [
-      .reasoningTextDone(.init(
+      .reasoningDone(.init(
         itemId: r.id, outputIndex: r.outputIndex, contentIndex: 0,
         text: r.emittedText, sequenceNumber: takeSequence(),
       )),
@@ -559,7 +559,7 @@ struct GraniteParser: ResponseFormatParser {
       )))
     }
     events.append(.functionCallArgumentsDone(.init(
-      itemId: id, outputIndex: outputIndex, name: name, arguments: arguments, sequenceNumber: takeSequence(),
+      itemId: id, outputIndex: outputIndex, arguments: arguments, sequenceNumber: takeSequence(),
     )))
     events.append(.outputItemDone(.init(
       item: .functionCall(doneItem), outputIndex: outputIndex, sequenceNumber: takeSequence(),

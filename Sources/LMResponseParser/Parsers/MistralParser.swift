@@ -255,7 +255,7 @@ struct MistralParser: ResponseFormatParser {
     if var r = openReasoning {
       r.emittedText += text
       openReasoning = r
-      events.append(.reasoningTextDelta(.init(
+      events.append(.reasoningDelta(.init(
         itemId: r.id,
         outputIndex: r.outputIndex,
         contentIndex: 0,
@@ -287,7 +287,7 @@ struct MistralParser: ResponseFormatParser {
     openReasoning = nil
     let part = ReasoningTextContent(text: r.emittedText)
     return [
-      .reasoningTextDone(.init(
+      .reasoningDone(.init(
         itemId: r.id, outputIndex: r.outputIndex, contentIndex: 0,
         text: r.emittedText, sequenceNumber: takeSequence(),
       )),
@@ -597,7 +597,6 @@ struct MistralParser: ResponseFormatParser {
     events.append(.functionCallArgumentsDone(.init(
       itemId: id,
       outputIndex: outputIndex,
-      name: name,
       arguments: arguments,
       sequenceNumber: takeSequence(),
     )))

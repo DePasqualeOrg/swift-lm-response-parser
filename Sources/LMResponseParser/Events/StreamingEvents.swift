@@ -4,11 +4,12 @@ import Foundation
 
 /// One spec-shaped streaming event emitted during a response.
 ///
-/// Covers the thirteen events the parser layer and the emitter together
+/// Covers the fourteen events the parser layer and the emitter together
 /// produce:
 ///
 /// - **Lifecycle envelope** (emitted by ``ResponseStream``):
-///   `responseCreated`, `responseInProgress`, `responseCompleted`.
+///   `responseCreated`, `responseInProgress`, `responseCompleted`,
+///   `responseIncomplete`.
 /// - **Item lifecycle** (emitted by per-format parsers):
 ///   `outputItemAdded`, `outputItemDone`.
 /// - **Content-part envelope** (emitted by per-format parsers, around message
@@ -18,11 +19,11 @@ import Foundation
 ///   `outputTextDelta`, `outputTextDone`.
 /// - **Argument deltas inside a function call**:
 ///   `functionCallArgumentsDelta`, `functionCallArgumentsDone`.
-/// - **Reasoning-text deltas inside a reasoning item**:
-///   `reasoningTextDelta`, `reasoningTextDone`.
+/// - **Reasoning deltas inside a reasoning item**:
+///   `reasoningDelta`, `reasoningDone`.
 ///
 /// Other event types defined by the spec (`response.failed`,
-/// `response.incomplete`, `response.queued`, `response.refusal.*`, the
+/// `response.queued`, `response.refusal.*`, the
 /// hosted-product event families like `code_interpreter.*`, `web_search.*`,
 /// `mcp.*`, image-generation events, and so on) are not produced: either
 /// they are hosted-product surface that has no source on a local device,
@@ -32,6 +33,7 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
   case responseCreated(ResponseCreatedEvent)
   case responseInProgress(ResponseInProgressEvent)
   case responseCompleted(ResponseCompletedEvent)
+  case responseIncomplete(ResponseIncompleteEvent)
 
   case outputItemAdded(ResponseOutputItemAddedEvent)
   case outputItemDone(ResponseOutputItemDoneEvent)
@@ -45,8 +47,8 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
   case functionCallArgumentsDelta(ResponseFunctionCallArgumentsDeltaEvent)
   case functionCallArgumentsDone(ResponseFunctionCallArgumentsDoneEvent)
 
-  case reasoningTextDelta(ResponseReasoningTextDeltaEvent)
-  case reasoningTextDone(ResponseReasoningTextDoneEvent)
+  case reasoningDelta(ResponseReasoningDeltaEvent)
+  case reasoningDone(ResponseReasoningDoneEvent)
 
   /// Read or write the event's `sequence_number` field. The parser emits
   /// events with parser-local sequence numbers; the emitter substitutes
@@ -59,6 +61,7 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
         case let .responseCreated(e): e.sequenceNumber
         case let .responseInProgress(e): e.sequenceNumber
         case let .responseCompleted(e): e.sequenceNumber
+        case let .responseIncomplete(e): e.sequenceNumber
         case let .outputItemAdded(e): e.sequenceNumber
         case let .outputItemDone(e): e.sequenceNumber
         case let .contentPartAdded(e): e.sequenceNumber
@@ -67,8 +70,8 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
         case let .outputTextDone(e): e.sequenceNumber
         case let .functionCallArgumentsDelta(e): e.sequenceNumber
         case let .functionCallArgumentsDone(e): e.sequenceNumber
-        case let .reasoningTextDelta(e): e.sequenceNumber
-        case let .reasoningTextDone(e): e.sequenceNumber
+        case let .reasoningDelta(e): e.sequenceNumber
+        case let .reasoningDone(e): e.sequenceNumber
       }
     }
     set {
@@ -79,6 +82,8 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
           e.sequenceNumber = newValue; self = .responseInProgress(e)
         case var .responseCompleted(e):
           e.sequenceNumber = newValue; self = .responseCompleted(e)
+        case var .responseIncomplete(e):
+          e.sequenceNumber = newValue; self = .responseIncomplete(e)
         case var .outputItemAdded(e):
           e.sequenceNumber = newValue; self = .outputItemAdded(e)
         case var .outputItemDone(e):
@@ -95,11 +100,19 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
           e.sequenceNumber = newValue; self = .functionCallArgumentsDelta(e)
         case var .functionCallArgumentsDone(e):
           e.sequenceNumber = newValue; self = .functionCallArgumentsDone(e)
-        case var .reasoningTextDelta(e):
-          e.sequenceNumber = newValue; self = .reasoningTextDelta(e)
-        case var .reasoningTextDone(e):
-          e.sequenceNumber = newValue; self = .reasoningTextDone(e)
+        case var .reasoningDelta(e):
+          e.sequenceNumber = newValue; self = .reasoningDelta(e)
+        case var .reasoningDone(e):
+          e.sequenceNumber = newValue; self = .reasoningDone(e)
       }
+    }
+  }
+
+  package var terminalResponse: Response? {
+    switch self {
+      case let .responseCompleted(e): e.response
+      case let .responseIncomplete(e): e.response
+      default: nil
     }
   }
 }
@@ -127,6 +140,23 @@ public struct ResponseInProgressEvent: Sendable, Equatable {
 }
 
 public struct ResponseCompletedEvent: Sendable, Equatable {
+  public var response: Response
+  public var sequenceNumber: Int
+
+  public init(response: Response, sequenceNumber: Int) {
+    self.response = response
+    self.sequenceNumber = sequenceNumber
+  }
+}
+
+/// Terminal envelope for max-output-token exhaustion.
+///
+/// Open Responses defines `response.incomplete` as a distinct terminal
+/// event. vLLM and SGLang currently collapse this case into
+/// `response.completed` with `response.status == incomplete`; Swift emits
+/// the Open Responses discriminator and leaves vLLM/SGLang compatibility to
+/// decoders where needed.
+public struct ResponseIncompleteEvent: Sendable, Equatable {
   public var response: Response
   public var sequenceNumber: Int
 
@@ -210,7 +240,7 @@ public struct ResponseContentPartDoneEvent: Sendable, Equatable {
 
 // MARK: Output-text events
 
-/// **`logprobs` is omitted.** The OpenAI Responses API spec declares a
+/// **`logprobs` is omitted.** The Open Responses spec declares a
 /// required `logprobs: Array<...>` field on `response.output_text.delta`
 /// and `response.output_text.done`. The parser library has no logprob
 /// source — token probabilities live one layer below, in the inference
@@ -279,28 +309,34 @@ public struct ResponseFunctionCallArgumentsDeltaEvent: Sendable, Equatable {
 public struct ResponseFunctionCallArgumentsDoneEvent: Sendable, Equatable {
   public var itemId: String
   public var outputIndex: Int
-  public var name: String
+  // vLLM currently includes a non-spec `name` field on this event. Open
+  // Responses carries the function name on the surrounding `function_call`
+  // item, so this event intentionally models only the final arguments.
   public var arguments: String
   public var sequenceNumber: Int
 
   public init(
     itemId: String,
     outputIndex: Int,
-    name: String,
     arguments: String,
     sequenceNumber: Int,
   ) {
     self.itemId = itemId
     self.outputIndex = outputIndex
-    self.name = name
     self.arguments = arguments
     self.sequenceNumber = sequenceNumber
   }
 }
 
-// MARK: Reasoning-text events
+// MARK: Reasoning events
 
-public struct ResponseReasoningTextDeltaEvent: Sendable, Equatable {
+// Open Responses names these stream events `response.reasoning.delta/done`.
+// vLLM and SGLang still use the older OpenAI SDK names
+// `ResponseReasoningText*Event` and emit `response.reasoning_text.*`;
+// CodableEvents accepts those wire aliases, but this source API follows
+// the current Open Responses spec.
+
+public struct ResponseReasoningDeltaEvent: Sendable, Equatable {
   public var itemId: String
   public var outputIndex: Int
   public var contentIndex: Int
@@ -322,7 +358,7 @@ public struct ResponseReasoningTextDeltaEvent: Sendable, Equatable {
   }
 }
 
-public struct ResponseReasoningTextDoneEvent: Sendable, Equatable {
+public struct ResponseReasoningDoneEvent: Sendable, Equatable {
   public var itemId: String
   public var outputIndex: Int
   public var contentIndex: Int

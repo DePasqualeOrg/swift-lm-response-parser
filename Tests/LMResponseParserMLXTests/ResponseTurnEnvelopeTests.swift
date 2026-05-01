@@ -25,7 +25,7 @@ struct EnvelopeStartFinalizeTests {
   }
 
   @Test
-  func `finalize emits responseCompleted with derived status from finishReason`() {
+  func `finalize emits Open Responses terminal event with derived status from finishReason`() {
     for (reason, expected) in [
       (FinishReason.stop, ResponseStatus.completed),
       (.length, .incomplete),
@@ -36,10 +36,17 @@ struct EnvelopeStartFinalizeTests {
       let events = envelope.finalize(info: FinishInfo(
         finishReason: reason, inputTokens: 1, outputTokens: 1,
       ))
-      guard case let .responseCompleted(e) = events[0] else {
-        Issue.record("Expected responseCompleted for \(reason)"); return
+      let response: Response
+      switch (reason, events[0]) {
+        case let (.length, .responseIncomplete(e)):
+          response = e.response
+        case let (.stop, .responseCompleted(e)), let (.cancelled, .responseCompleted(e)):
+          response = e.response
+        default:
+          Issue.record("Unexpected terminal event for \(reason)")
+          continue
       }
-      #expect(e.response.status == expected, "status for \(reason)")
+      #expect(response.status == expected, "status for \(reason)")
     }
   }
 
@@ -50,8 +57,8 @@ struct EnvelopeStartFinalizeTests {
     let events = envelope.finalize(info: FinishInfo(
       finishReason: .length, inputTokens: 0, outputTokens: 0,
     ))
-    guard case let .responseCompleted(e) = events[0] else {
-      Issue.record("Expected responseCompleted"); return
+    guard case let .responseIncomplete(e) = events[0] else {
+      Issue.record("Expected responseIncomplete"); return
     }
     #expect(e.response.incompleteDetails?.reason == .maxOutputTokens)
   }
@@ -222,6 +229,7 @@ struct EnvelopeForwardTests {
         outputIndex: 0, sequenceNumber: 2,
       )),
       .responseCompleted(.init(response: strayResponse, sequenceNumber: 3)),
+      .responseIncomplete(.init(response: strayResponse, sequenceNumber: 4)),
     ]
     let out = pass.forward(stray)
     let kinds = out.map { event -> String in
@@ -229,6 +237,7 @@ struct EnvelopeForwardTests {
         case .responseCreated: "responseCreated"
         case .responseInProgress: "responseInProgress"
         case .responseCompleted: "responseCompleted"
+        case .responseIncomplete: "responseIncomplete"
         case .outputItemAdded: "outputItemAdded"
         default: "other"
       }

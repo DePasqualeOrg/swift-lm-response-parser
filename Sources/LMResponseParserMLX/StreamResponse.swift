@@ -254,7 +254,7 @@ private func runSinglePass<Element: Sendable>(
 
     await pass.awaitCleanup()
 
-    // The terminal `response.completed` is only synthesized when MLX
+    // The terminal response event is only synthesized when MLX
     // delivered a `.finished` record. A consumer-cancelled iterator
     // (processor cancelled → `pass` ends without `.finished`)
     // closes silently. The non-cancelled "no `.finished`" branch is
@@ -273,8 +273,8 @@ private func runSinglePass<Element: Sendable>(
 
     let terminal = emitterBox.finalize(info: usage.finalInfo(finishReason: info.finishReason))
     for event in terminal {
-      if case let .responseCompleted(e) = event {
-        responseBox.set(e.response)
+      if let response = event.terminalResponse {
+        responseBox.set(response)
       }
     }
     for batch in mapStream(terminal) {

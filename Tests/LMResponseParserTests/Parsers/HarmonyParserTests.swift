@@ -363,7 +363,7 @@ struct HarmonyStreamingTests {
     }
     allEvents += parser.finalize()
     let deltas = allEvents.compactMap { ev -> String? in
-      if case let .reasoningTextDelta(e) = ev { return e.delta } else { return nil }
+      if case let .reasoningDelta(e) = ev { return e.delta } else { return nil }
     }
     // Three streamed deltas — opener and closer arrive separately.
     #expect(deltas.count == 3)

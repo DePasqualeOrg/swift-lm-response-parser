@@ -31,6 +31,21 @@ struct ResponseStreamTests {
   }
 
   @Test
+  func `length finalize emits response_incomplete and populates finalResponse`() {
+    let stream = makeStream(parser: NoOpParser())
+    _ = stream.start()
+
+    let final = stream.finalize(finishReason: .length, inputTokens: 7)
+
+    guard case let .responseIncomplete(incomplete) = final[0] else {
+      Issue.record("Expected response.incomplete terminal event"); return
+    }
+    #expect(incomplete.response.status == .incomplete)
+    #expect(incomplete.response.incompleteDetails?.reason == .maxOutputTokens)
+    #expect(stream.finalResponse == incomplete.response)
+  }
+
+  @Test
   func `process forwards detokenized chunks into the parser with aligned token IDs`() {
     let recorder = CallRecorder()
     let parser = ScriptedParser(

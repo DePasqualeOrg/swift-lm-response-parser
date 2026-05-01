@@ -34,8 +34,7 @@ final class ResponseTurnEnvelope {
 
   /// Live snapshot of items emitted so far in this turn. Populated on
   /// `output_item.added` / `output_item.done` (after rebasing) so the
-  /// terminal `response.completed` carries the canonical
-  /// `Response.output[]`.
+  /// terminal response event carries the canonical `Response.output[]`.
   private var accumulatedItems: [ResponseOutputItem] = []
 
   /// Phase tracking for assertions.
@@ -94,8 +93,8 @@ final class ResponseTurnEnvelope {
     ]
   }
 
-  /// Yield `response.completed`. Idempotent in the sense that calling
-  /// it advances `phase` to `.finalized`; calling again traps.
+  /// Yield the terminal response event. Idempotent in the sense that
+  /// calling it advances `phase` to `.finalized`; calling again traps.
   func finalize(info: FinishInfo) -> [ResponseStreamingEvent] {
     precondition(phase == .streaming, "ResponseTurnEnvelope.finalize() called outside streaming phase")
 
@@ -121,9 +120,20 @@ final class ResponseTurnEnvelope {
     snapshot.usage = usage
 
     phase = .finalized
-    return [
-      .responseCompleted(.init(response: snapshot, sequenceNumber: takeSequence())),
-    ]
+    // Open Responses uses `response.incomplete` for max-output-token
+    // exhaustion. vLLM and SGLang currently emit `response.completed`
+    // with `status = incomplete`; the multi-pass MLX envelope follows
+    // the Open Responses terminal discriminator.
+    switch info.finishReason {
+      case .length:
+        return [
+          .responseIncomplete(.init(response: snapshot, sequenceNumber: takeSequence())),
+        ]
+      case .stop, .cancelled:
+        return [
+          .responseCompleted(.init(response: snapshot, sequenceNumber: takeSequence())),
+        ]
+    }
   }
 
   // MARK: PassHandle callbacks
@@ -233,7 +243,7 @@ final class PassHandle {
       // Suppress envelope-level lifecycle events from per-pass
       // emitters: the turn envelope owns those.
       switch event {
-        case .responseCreated, .responseInProgress, .responseCompleted:
+        case .responseCreated, .responseInProgress, .responseCompleted, .responseIncomplete:
           continue
         default:
           break
@@ -263,7 +273,7 @@ final class PassHandle {
 /// pass through unchanged.
 private func rebaseOutputIndex(_ event: ResponseStreamingEvent, by offset: Int) -> ResponseStreamingEvent {
   switch event {
-    case .responseCreated, .responseInProgress, .responseCompleted:
+    case .responseCreated, .responseInProgress, .responseCompleted, .responseIncomplete:
       return event
     case var .outputItemAdded(e):
       e.outputIndex += offset
@@ -289,18 +299,18 @@ private func rebaseOutputIndex(_ event: ResponseStreamingEvent, by offset: Int) 
     case var .functionCallArgumentsDone(e):
       e.outputIndex += offset
       return .functionCallArgumentsDone(e)
-    case var .reasoningTextDelta(e):
+    case var .reasoningDelta(e):
       e.outputIndex += offset
-      return .reasoningTextDelta(e)
-    case var .reasoningTextDone(e):
+      return .reasoningDelta(e)
+    case var .reasoningDone(e):
       e.outputIndex += offset
-      return .reasoningTextDone(e)
+      return .reasoningDone(e)
   }
 }
 
 private func outputIndex(of event: ResponseStreamingEvent) -> Int? {
   switch event {
-    case .responseCreated, .responseInProgress, .responseCompleted:
+    case .responseCreated, .responseInProgress, .responseCompleted, .responseIncomplete:
       nil
     case let .outputItemAdded(e): e.outputIndex
     case let .outputItemDone(e): e.outputIndex
@@ -310,7 +320,7 @@ private func outputIndex(of event: ResponseStreamingEvent) -> Int? {
     case let .outputTextDone(e): e.outputIndex
     case let .functionCallArgumentsDelta(e): e.outputIndex
     case let .functionCallArgumentsDone(e): e.outputIndex
-    case let .reasoningTextDelta(e): e.outputIndex
-    case let .reasoningTextDone(e): e.outputIndex
+    case let .reasoningDelta(e): e.outputIndex
+    case let .reasoningDone(e): e.outputIndex
   }
 }

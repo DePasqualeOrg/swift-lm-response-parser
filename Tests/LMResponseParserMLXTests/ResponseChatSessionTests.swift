@@ -49,7 +49,27 @@ struct ResponseChatSessionRespondDrainTests {
   }
 
   @Test
-  func `drainTerminalResponse throws when the stream closes without responseCompleted`() async {
+  func `drainTerminalResponse returns responseIncomplete terminal response`() async throws {
+    let expected = Response(
+      id: "resp_incomplete",
+      createdAt: 0,
+      model: "test-model",
+      status: .incomplete,
+      incompleteDetails: .init(reason: .maxOutputTokens),
+    )
+    let stream = AsyncThrowingStream<ResponseStreamingEvent, Error> { continuation in
+      continuation.yield(.responseIncomplete(.init(response: expected, sequenceNumber: 0)))
+      continuation.finish()
+    }
+
+    let actual = try await ResponseChatSession.drainTerminalResponse(from: stream)
+    #expect(actual.id == "resp_incomplete")
+    #expect(actual.status == .incomplete)
+    #expect(actual.incompleteDetails?.reason == .maxOutputTokens)
+  }
+
+  @Test
+  func `drainTerminalResponse throws when the stream closes without terminal response`() async {
     let stream = AsyncThrowingStream<ResponseStreamingEvent, Error> { continuation in
       continuation.finish()
     }

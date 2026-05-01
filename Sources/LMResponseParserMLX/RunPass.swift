@@ -22,7 +22,7 @@ enum PassOutput {
 
 /// Per-pass MLX completion data. Distinct from the parser library's
 /// ``FinishInfo`` (which the bridge constructs by aggregating multiple
-/// `PassFinishInfo`s for the terminal `response.completed` event).
+/// `PassFinishInfo`s for the terminal response event).
 struct PassFinishInfo {
   /// This pass's prompt token count.
   let inputTokens: Int

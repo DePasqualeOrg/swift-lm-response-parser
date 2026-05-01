@@ -369,7 +369,7 @@ struct DeepSeekV31Parser: ResponseFormatParser {
     return [
       .functionCallArgumentsDone(.init(
         itemId: call.id, outputIndex: outputIndex,
-        name: name, arguments: call.argsEmitted, sequenceNumber: takeSequence(),
+        arguments: call.argsEmitted, sequenceNumber: takeSequence(),
       )),
       .outputItemDone(.init(
         item: .functionCall(doneItem), outputIndex: outputIndex, sequenceNumber: takeSequence(),

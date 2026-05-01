@@ -586,7 +586,6 @@ struct Glm4Parser: ResponseFormatParser {
       .functionCallArgumentsDone(.init(
         itemId: toolCalls[index].id,
         outputIndex: toolCalls[index].outputIndex,
-        name: name,
         arguments: argsText,
         sequenceNumber: takeSequence(),
       )),

@@ -110,13 +110,13 @@ struct QwenReasoningTests {
     var parser = QwenParser()
     let events = parser.process(ParserInput(text: "<think>r</think>c")) + parser.finalize()
     let kinds = events.map { eventKind($0) }
-    // Reasoning sequence: outputItemAdded → contentPartAdded → reasoningTextDelta → reasoningTextDone → contentPartDone → outputItemDone
+    // Reasoning sequence: outputItemAdded → contentPartAdded → reasoningDelta → reasoningDone → contentPartDone → outputItemDone
     // Then message sequence: outputItemAdded → contentPartAdded → outputTextDelta → outputTextDone → contentPartDone → outputItemDone
     #expect(kinds == [
       "outputItemAdded",
       "contentPartAdded",
-      "reasoningTextDelta",
-      "reasoningTextDone",
+      "reasoningDelta",
+      "reasoningDone",
       "contentPartDone",
       "outputItemDone",
       "outputItemAdded",
@@ -309,7 +309,7 @@ struct QwenStreamingBoundaryTests {
     var events = parser.process(ParserInput(text: "<thi"))
     // No deltas yet — buffer might still grow into <think>.
     let initialDeltas = events.filter {
-      if case .reasoningTextDelta = $0 { return true }
+      if case .reasoningDelta = $0 { return true }
       if case .outputTextDelta = $0 { return true }
       return false
     }

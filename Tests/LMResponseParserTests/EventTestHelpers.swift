@@ -111,6 +111,7 @@ func eventKind(_ event: ResponseStreamingEvent) -> String {
     case .responseCreated: "responseCreated"
     case .responseInProgress: "responseInProgress"
     case .responseCompleted: "responseCompleted"
+    case .responseIncomplete: "responseIncomplete"
     case .outputItemAdded: "outputItemAdded"
     case .outputItemDone: "outputItemDone"
     case .contentPartAdded: "contentPartAdded"
@@ -119,8 +120,8 @@ func eventKind(_ event: ResponseStreamingEvent) -> String {
     case .outputTextDone: "outputTextDone"
     case .functionCallArgumentsDelta: "functionCallArgumentsDelta"
     case .functionCallArgumentsDone: "functionCallArgumentsDone"
-    case .reasoningTextDelta: "reasoningTextDelta"
-    case .reasoningTextDone: "reasoningTextDone"
+    case .reasoningDelta: "reasoningDelta"
+    case .reasoningDone: "reasoningDone"
   }
 }
 

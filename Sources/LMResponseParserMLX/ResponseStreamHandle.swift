@@ -29,7 +29,7 @@ import LMResponseParser
 /// task before yielding the terminal event.
 ///
 /// ``finalResponse()`` exposes the terminal `Response` snapshot the bridge
-/// generated internally for the `response.completed` event. Useful chiefly
+/// generated internally for the terminal response event. Useful chiefly
 /// for ``streamResponseItems(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``
 /// callers that can't see lifecycle events but still want usage and status.
 ///
@@ -65,10 +65,10 @@ public struct ResponseStreamHandle<Element: Sendable>: AsyncSequence, Sendable {
     await _awaitCleanup()
   }
 
-  /// The terminal ``/LMResponseParser/Response`` snapshot – usage, status, incomplete
-  /// details – captured from the `response.completed` event the bridge
-  /// generated internally. Awaits cleanup before returning, so callers
-  /// can rely on the result reflecting the fully drained pass.
+  /// The terminal ``/LMResponseParser/Response`` snapshot – usage, status,
+  /// incomplete details – captured from the terminal response event the
+  /// bridge generated internally. Awaits cleanup before returning, so
+  /// callers can rely on the result reflecting the fully drained pass.
   ///
   /// Returns `nil` when the pass finished abnormally (consumer
   /// cancellation before any output, or an unexpected MLX contract
