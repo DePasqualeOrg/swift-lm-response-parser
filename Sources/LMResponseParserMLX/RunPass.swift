@@ -51,63 +51,12 @@ public enum BridgeError: LocalizedError, Equatable {
     switch self {
       case let .tokenizerMissingRequiredTokens(format, missing):
         let list = missing.sorted().joined(separator: ", ")
-        let caseName = format.swiftCaseName
+        let caseName = String(describing: format)
         return """
         The loaded tokenizer's vocabulary does not contain \(list), \
         which \(caseName) requires. The loaded checkpoint or tokenizer \
         source is likely not a \(caseName) match.
         """
-    }
-  }
-}
-
-private extension ResponseFormat {
-  /// Stable user-facing case name. Computed via an explicit switch so the
-  /// rendering is independent of `String(describing:)` /
-  /// `CustomStringConvertible`, and so any future addition of an
-  /// associated value to a `ResponseFormat` case forces this site to
-  /// be revisited rather than producing a noisy `harmony(profile: …)`
-  /// rendering in error output.
-  var swiftCaseName: String {
-    switch self {
-      case .hermes: "hermes"
-      case .qwen: "qwen"
-      case .qwen3Xml: "qwen3Xml"
-      case .deepseekR1: "deepseekR1"
-      case .deepseekV3: "deepseekV3"
-      case .deepseekV31: "deepseekV31"
-      case .deepseekV32: "deepseekV32"
-      case .mistral: "mistral"
-      case .llama3: "llama3"
-      case .pythonic: "pythonic"
-      case .lfm2: "lfm2"
-      case .olmo3: "olmo3"
-      case .olmo3Thinking: "olmo3Thinking"
-      case .phi4Mini: "phi4Mini"
-      case .phiReasoning: "phiReasoning"
-      case .gemmaFunctionCall: "gemmaFunctionCall"
-      case .harmony: "harmony"
-      case .gemma4: "gemma4"
-      case .kimiK2: "kimiK2"
-      case .kimiK2Thinking: "kimiK2Thinking"
-      case .miniMaxM2: "miniMaxM2"
-      case .miniMax: "miniMax"
-      case .glm4: "glm4"
-      case .glm4Thinking: "glm4Thinking"
-      case .longcat: "longcat"
-      case .granite: "granite"
-      case .granite20bFc: "granite20bFc"
-      case .granite4: "granite4"
-      case .internlm: "internlm"
-      case .jamba: "jamba"
-      case .hunyuanA13B: "hunyuanA13B"
-      case .magistral: "magistral"
-      case .xlam: "xlam"
-      case .seedOss: "seedOss"
-      case .step3p5: "step3p5"
-      case .ernie: "ernie"
-      case .ernieThinking: "ernieThinking"
-      case .json: "json"
     }
   }
 }

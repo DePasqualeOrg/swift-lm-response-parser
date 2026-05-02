@@ -202,10 +202,15 @@ private func runSinglePass<Element: Sendable>(
     )
     ?? .json
 
+  let effectivePriorOutput = resolvedFormat.combinedPriorOutput(
+    fromPreparedPrompt: input,
+    tokenizer: adapter,
+    generatedPriorOutput: priorOutput,
+  )
   let parser = resolvedFormat.makeParser(
     tokenizer: adapter,
     tools: config.tools,
-    priorOutput: priorOutput,
+    priorOutput: effectivePriorOutput,
   )
   let emitterBox = EmitterBox(emitter: ResponseStreamEmitter(parser: parser, config: config))
 

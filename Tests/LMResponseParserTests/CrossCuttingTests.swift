@@ -306,6 +306,203 @@ struct ResponseItemsAccumulatorTests {
 
 // MARK: Continuation tests for all reasoning-capable parsers
 
+@Suite("DelimitedReasoningBoundary")
+struct DelimitedReasoningBoundaryTests {
+  @Test
+  func `Open delimiter returns suffix from the last opener`() {
+    let boundary = DelimitedReasoningBoundary.think()
+    let suffix = boundary.suffixIfOpen(in: "old <think>done</think> new <think>partial")
+    #expect(suffix == "<think>partial")
+  }
+
+  @Test
+  func `Explicit end marker closes the boundary`() {
+    let boundary = DelimitedReasoningBoundary.think()
+    #expect(!boundary.isOpen(in: "<think>done</think>"))
+  }
+
+  @Test
+  func `Implicit end marker closes the boundary`() {
+    let boundary = DelimitedReasoningBoundary.think(implicitEndTokens: ["<tool_call>"])
+    #expect(!boundary.isOpen(in: "<think>partial<tool_call>"))
+  }
+
+  @Test
+  func `Unpaired implicit end marker closes the boundary`() {
+    let boundary = DelimitedReasoningBoundary.think(unpairedImplicitEnds: [.toolCall])
+    #expect(!boundary.isOpen(in: "<think>partial<tool_call>"))
+  }
+
+  @Test
+  func `Paired implicit end marker keeps the boundary open`() {
+    let boundary = DelimitedReasoningBoundary.think(unpairedImplicitEnds: [.toolCall])
+    let suffix = boundary.suffixIfOpen(in: "<think>example<tool_call></tool_call>")
+    #expect(suffix == "<think>example<tool_call></tool_call>")
+  }
+}
+
+@Suite("ImplicitReasoningPreamble")
+struct ImplicitReasoningPreambleTests {
+  @Test
+  func `Starts in reasoning when no prior end marker exists`() {
+    let preamble = ImplicitReasoningPreamble.think()
+    #expect(preamble.startsInReasoning(after: nil))
+    #expect(preamble.startsInReasoning(after: "partial reasoning"))
+  }
+
+  @Test
+  func `Explicit end marker resumes normal`() {
+    let preamble = ImplicitReasoningPreamble.think()
+    #expect(!preamble.startsInReasoning(after: "reasoning</think>answer"))
+  }
+
+  @Test
+  func `Implicit end marker also resumes normal`() {
+    let preamble = ImplicitReasoningPreamble.think(implicitEndTokens: ["<tool_call>"])
+    #expect(!preamble.startsInReasoning(after: "reasoning<tool_call>"))
+  }
+}
+
+@Suite("Prompt-boundary parser state")
+struct PromptBoundaryParserStateTests {
+  @Test
+  func `Qwen XML starts in reasoning when rendered prompt leaves think open`() {
+    let prior = ResponseFormat.qwen3Xml.promptBoundaryPriorText(
+      fromRenderedPrompt: "system\nuser\nassistant\n<think>\n",
+    )
+    #expect(prior == "<think>")
+  }
+
+  @Test
+  func `Qwen XML stays normal when rendered prompt already closed think`() {
+    let prior = ResponseFormat.qwen3Xml.promptBoundaryPriorText(
+      fromRenderedPrompt: "system\nuser\nassistant\n<think>\n\n</think>\n\n",
+    )
+    #expect(prior == nil)
+  }
+
+  @Test
+  func `Qwen XML treats unpaired prompt tool call as implicit reasoning end`() {
+    let prior = ResponseFormat.qwen3Xml.promptBoundaryPriorText(
+      fromRenderedPrompt: "<think>old reasoning<tool_call>",
+    )
+    #expect(prior == nil)
+  }
+
+  @Test
+  func `Qwen XML ignores paired prompt tool call examples when deciding prompt boundary`() {
+    let prior = ResponseFormat.qwen3Xml.promptBoundaryPriorText(
+      fromRenderedPrompt: "<think>example<tool_call></tool_call>",
+    )
+    #expect(prior == "<think>")
+  }
+
+  @Test
+  func `Paired prompt tool call examples keep generated suffix in reasoning`() {
+    let prior = ResponseFormat.qwen3Xml.combinedPriorOutput(
+      fromRenderedPrompt: "<think>example<tool_call></tool_call>",
+      generatedPriorOutput: nil,
+    )
+    var parser = ResponseFormat.qwen3Xml.makeParser(
+      tokenizer: StubTokenizer(),
+      priorOutput: prior,
+    )
+
+    let events = parser.process(ParserInput(text: "new reasoning</think>answer"))
+      + parser.finalize()
+    let items = accumulateItems(from: events)
+
+    guard items.count == 2 else {
+      Issue.record("Expected reasoning + message, got \(items)")
+      return
+    }
+    guard case let .reasoning(reasoning) = items[0] else {
+      Issue.record("Expected first item to be reasoning, got \(items[0])")
+      return
+    }
+    #expect(reasoning.text == "new reasoning")
+    guard case let .message(message) = items[1] else {
+      Issue.record("Expected second item to be message, got \(items[1])")
+      return
+    }
+    guard case let .outputText(text) = message.content.first else {
+      Issue.record("Expected message output text, got \(message.content)")
+      return
+    }
+    #expect(text.text == "answer")
+  }
+
+  @Test
+  func `Non Qwen formats ignore prompt think markers`() {
+    let prior = ResponseFormat.hermes.promptBoundaryPriorText(
+      fromRenderedPrompt: "assistant\n<think>\n",
+    )
+    #expect(prior == nil)
+  }
+
+  @Test
+  func `Generated prior output is appended after prompt boundary context`() {
+    let prior = ResponseFormat.qwen3Xml.combinedPriorOutput(
+      fromRenderedPrompt: "system\nuser\nassistant\n<think>\n",
+      generatedPriorOutput: "partial reasoning",
+    )
+    #expect(prior == "<think>partial reasoning")
+  }
+
+  @Test
+  func `Generated prior output passes through when prompt has no relevant boundary`() {
+    let prior = ResponseFormat.hermes.combinedPriorOutput(
+      fromRenderedPrompt: "assistant\n<think>\n",
+      generatedPriorOutput: "partial generated text",
+    )
+    #expect(prior == "partial generated text")
+  }
+
+  @Test
+  func `Prompt injected think makes Qwen3 XML generated suffix parse as reasoning then tool call`() throws {
+    let prior = ResponseFormat.qwen3Xml.promptBoundaryPriorText(
+      fromRenderedPrompt: "system\nuser\nassistant\n<think>\n",
+    )
+    var parser = ResponseFormat.qwen3Xml.makeParser(
+      tokenizer: StubTokenizer(),
+      priorOutput: prior,
+    )
+
+    let output = """
+    I should call the weather tool.</think><tool_call>
+    <function=get_weather>
+    <parameter=city>Paris</parameter>
+    </function>
+    </tool_call>
+    """
+    let events = parser.process(ParserInput(text: output)) + parser.finalize()
+    let items = accumulateItems(from: events)
+
+    guard items.count == 2 else {
+      Issue.record("Expected reasoning + function call, got \(items)")
+      return
+    }
+    guard case let .reasoning(reasoning) = items[0] else {
+      Issue.record("Expected first item to be reasoning, got \(items[0])")
+      return
+    }
+    #expect(reasoning.text == "I should call the weather tool.")
+
+    guard case let .functionCall(call) = items[1] else {
+      Issue.record("Expected second item to be function call, got \(items[1])")
+      return
+    }
+    #expect(call.name == "get_weather")
+    #expect(call.status == .completed)
+    let decoded = try call.decodedArguments(as: WeatherArgs.self)
+    #expect(decoded == WeatherArgs(city: "Paris"))
+  }
+
+  private struct WeatherArgs: Codable, Equatable {
+    var city: String
+  }
+}
+
 @Suite("Continuation — priorOutput sets initial reasoning state")
 struct ContinuationTests {
   @Test
@@ -322,6 +519,21 @@ struct ContinuationTests {
   }
 
   @Test
+  func `Qwen: priorOutput with tool call after think starts normal`() {
+    let parser = ResponseFormat.qwen.makeParser(
+      tokenizer: StubTokenizer(),
+      priorOutput: "<think>partial<tool_call></tool_call>",
+    )
+    var p = parser
+    let items = accumulateItems(from: p.process(ParserInput(text: "final")) + p.finalize())
+    guard items.count == 1 else {
+      Issue.record("Expected one message, got \(items)")
+      return
+    }
+    guard case .message = items[0] else { Issue.record("Expected message"); return }
+  }
+
+  @Test
   func `Qwen3-Xml: priorOutput with unclosed <think> resumes in reasoning`() {
     let parser = ResponseFormat.qwen3Xml.makeParser(
       tokenizer: StubTokenizer(),
@@ -332,6 +544,21 @@ struct ContinuationTests {
       p.process(ParserInput(text: " continues</think>final")) + p.finalize())
     #expect(items.count == 2)
     guard case .reasoning = items[0] else { Issue.record("Expected reasoning"); return }
+  }
+
+  @Test
+  func `Qwen3-Xml: priorOutput with tool call after think starts normal`() {
+    let parser = ResponseFormat.qwen3Xml.makeParser(
+      tokenizer: StubTokenizer(),
+      priorOutput: "<think>partial<tool_call></tool_call>",
+    )
+    var p = parser
+    let items = accumulateItems(from: p.process(ParserInput(text: "final")) + p.finalize())
+    guard items.count == 1 else {
+      Issue.record("Expected one message, got \(items)")
+      return
+    }
+    guard case .message = items[0] else { Issue.record("Expected message"); return }
   }
 
   @Test

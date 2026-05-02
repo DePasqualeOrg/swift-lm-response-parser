@@ -46,15 +46,20 @@ func runOnePass<Element: Sendable>(
       modelConfig: modelConfig ?? [:],
     )
     ?? .json
-  // No `priorOutput:` here, unlike the low-level
-  // `streamResponseEvents(...)` helper. Each pass within a turn
-  // begins after a complete tool-call (the model emitted its
-  // `function_call` and stopped, the dispatcher returned, the
-  // session synthesized a `function_call_output` item). It never
-  // resumes mid-marker, so there is no half-open `<think>` block or
-  // partial XML tag for the parser to interpret. A fresh parser per
-  // pass is correct.
-  var parser = resolvedFormat.makeParser(tokenizer: adapter, tools: tools)
+  // The parser sees only generated suffix text. If the rendered prompt
+  // leaves a parser marker open at that suffix boundary, pass the prompt
+  // tail through the same `priorOutput` contract used by continuation
+  // streams.
+  let effectivePriorOutput = resolvedFormat.combinedPriorOutput(
+    fromPreparedPrompt: input,
+    tokenizer: adapter,
+    generatedPriorOutput: nil,
+  )
+  var parser = resolvedFormat.makeParser(
+    tokenizer: adapter,
+    tools: tools,
+    priorOutput: effectivePriorOutput,
+  )
 
   let pass = try runPass(
     on: context,

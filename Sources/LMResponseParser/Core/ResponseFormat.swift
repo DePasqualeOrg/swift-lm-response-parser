@@ -12,7 +12,7 @@ public enum ResponseFormat: Sendable, Equatable, CaseIterable {
   case hermes
   /// Qwen 2.5 / Qwen 3 base – Hermes-style JSON tool calls.
   case qwen
-  /// Qwen 3 Coder / Qwen 3.5 – XML function format.
+  /// Qwen 3 Coder / Qwen 3.5+ – XML function format.
   case qwen3Xml
   /// DeepSeek-R1-style `<think>` reasoning + tool-call interleave.
   case deepseekR1
@@ -166,8 +166,9 @@ extension ResponseFormat {
   /// longest-prefix tiebreak picks the winner regardless of order. Kept
   /// loosely sorted by family for readability.
   package static let namePrefixes: [(prefix: String, format: ResponseFormat)] = [
-    // Qwen 3 Coder / Qwen 3.5 – XML function format.
+    // Qwen 3 Coder / Qwen 3.5+ – XML function format.
     ("qwen3-coder", .qwen3Xml),
+    ("qwen3.6", .qwen3Xml),
     ("qwen3.5", .qwen3Xml),
 
     // StepFun Step-3.5-Flash. SGLang aliases its `step3p5` registry
@@ -493,12 +494,14 @@ extension ResponseFormat {
   /// coercion: Qwen3-Xml, MiniMax M2, and GLM 4 read parameter types out of
   /// the schema to coerce raw string values; every other parser ignores it.
   ///
-  /// Pass `priorOutput` for continuation requests so the factory can scan
-  /// for an unclosed reasoning marker and set the parser's initial state
-  /// accordingly. The scan is per-format because each family uses a
-  /// different reasoning-marker shape – see the
-  /// `…HasUnclosedReasoning(_:)` helpers below. Mid-tool-call continuation
-  /// is deliberately not supported.
+  /// Pass `priorOutput` when parsing starts after already-rendered text,
+  /// such as a continuation chunk or a generated suffix whose rendered
+  /// prompt opened a parser region. The factory scans that preceding text
+  /// for an unclosed reasoning marker and sets the parser's initial state
+  /// accordingly. Delimited marker families use
+  /// ``DelimitedReasoningBoundary``; families with implicit reasoning
+  /// preambles use ``ImplicitReasoningPreamble``. Mid-tool-call
+  /// continuation is deliberately not supported.
   package func makeParser(
     tokenizer _: any ParserTokenizer,
     tools: [ToolSpec] = [],
@@ -508,14 +511,24 @@ extension ResponseFormat {
       case .hermes:
         HermesParser()
       case .qwen:
-        QwenParser(initialState: thinkBlockHasUnclosedReasoning(priorOutput) ? .reasoning : .normal)
+        QwenParser(
+          initialState: Self.thinkEndedByToolCallBoundary.isOpen(in: priorOutput)
+            ? .reasoning
+            : .normal,
+        )
       case .qwen3Xml:
         Qwen3XmlParser(
-          initialState: thinkBlockHasUnclosedReasoning(priorOutput) ? .reasoning : .normal,
+          initialState: Self.thinkEndedByToolCallBoundary.isOpen(in: priorOutput)
+            ? .reasoning
+            : .normal,
           tools: tools,
         )
       case .deepseekR1:
-        DeepSeekR1Parser(initialState: deepseekR1InitialState(priorOutput: priorOutput))
+        DeepSeekR1Parser(
+          initialState: Self.thinkPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
+        )
       case .deepseekV3:
         DeepSeekV3Parser()
       case .deepseekV31:
@@ -523,14 +536,22 @@ extension ResponseFormat {
       case .kimiK2:
         KimiK2Parser()
       case .kimiK2Thinking:
-        KimiK2Parser(initialState: kimiK2ThinkingInitialState(priorOutput: priorOutput))
+        KimiK2Parser(
+          initialState: Self.kimiK2ThinkingPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
+        )
       case .harmony:
         HarmonyParser(initialState: harmonyHasUnclosedReasoning(priorOutput) ? .inReasoning : .idle)
       case .gemma4:
-        Gemma4Parser(initialState: gemma4HasUnclosedReasoning(priorOutput) ? .reasoning : .normal)
+        Gemma4Parser(
+          initialState: Self.gemma4ThoughtBoundary.isOpen(in: priorOutput) ? .reasoning : .normal,
+        )
       case .miniMaxM2:
         MiniMaxM2Parser(
-          initialState: miniMaxM2InitialState(priorOutput: priorOutput),
+          initialState: Self.thinkPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
           tools: tools,
         )
       case .miniMax:
@@ -541,7 +562,9 @@ extension ResponseFormat {
         Glm4Parser(
           tools: tools,
           acceptThink: true,
-          initialState: glm4ThinkingInitialState(priorOutput: priorOutput),
+          initialState: Self.thinkPreambleEndedByToolCall.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
         )
       case .longcat:
         HermesParser(toolCallStart: "<longcat_tool_call>", toolCallEnd: "</longcat_tool_call>")
@@ -556,11 +579,13 @@ extension ResponseFormat {
       case .jamba:
         JambaParser()
       case .hunyuanA13B:
-        HunyuanA13BParser(initialState: hunyuanA13BInitialState(priorOutput: priorOutput))
+        HunyuanA13BParser(
+          initialState: Self.thinkBoundary.isOpen(in: priorOutput) ? .reasoning : .normal,
+        )
       case .magistral:
         MistralParser(
           acceptThink: true,
-          initialState: magistralInitialState(priorOutput: priorOutput),
+          initialState: Self.magistralThinkBoundary.isOpen(in: priorOutput) ? .reasoning : .normal,
         )
       case .deepseekV32:
         DeepSeekV32Parser()
@@ -590,13 +615,15 @@ extension ResponseFormat {
           endTag: "</function_calls>",
           newlineSeparated: true,
           acceptThink: true,
-          initialState: olmo3ThinkingInitialState(priorOutput: priorOutput),
+          initialState: Self.thinkPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
         )
       case .phi4Mini:
         Phi4MiniParser()
       case .phiReasoning:
         PhiReasoningParser(
-          initialState: thinkBlockHasUnclosedReasoning(priorOutput) ? .reasoning : .normal,
+          initialState: Self.thinkBoundary.isOpen(in: priorOutput) ? .reasoning : .normal,
         )
       case .gemmaFunctionCall:
         GemmaFunctionCallParser()
@@ -604,7 +631,9 @@ extension ResponseFormat {
         XlamParser()
       case .seedOss:
         Qwen3XmlParser(
-          initialState: seedOssInitialState(priorOutput: priorOutput),
+          initialState: Self.seedOssPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
           tools: tools,
           thinkStart: "<seed:think>",
           thinkEnd: "</seed:think>",
@@ -613,7 +642,9 @@ extension ResponseFormat {
         )
       case .step3p5:
         Qwen3XmlParser(
-          initialState: step3p5InitialState(priorOutput: priorOutput),
+          initialState: Self.thinkPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
           tools: tools,
           trimNewlineAroundThinkEnd: true,
         )
@@ -622,38 +653,29 @@ extension ResponseFormat {
       case .ernieThinking:
         ErnieParser(
           acceptThink: true,
-          initialState: ernieThinkingInitialState(priorOutput: priorOutput),
+          initialState: Self.thinkPreamble.startsInReasoning(after: priorOutput)
+            ? .reasoning
+            : .normal,
         )
       case .json:
         JSONFallbackParser()
     }
   }
 
-  /// Returns true when `priorOutput` ended inside an unclosed `<think>`
-  /// block – the reasoning marker shared by Hermes-family models (Qwen,
-  /// Qwen3-Xml, DeepSeek-R1). Finds the *last* `<think>` opener and
-  /// returns true only if no `</think>` appears after it; this is robust
-  /// to multi-block prior output where earlier blocks were closed cleanly.
-  private func thinkBlockHasUnclosedReasoning(_ priorOutput: String?) -> Bool {
-    guard let priorOutput, !priorOutput.isEmpty else { return false }
-    guard let lastOpenRange = priorOutput.range(of: "<think>", options: .backwards) else {
-      return false
-    }
-    let after = priorOutput[lastOpenRange.upperBound...]
-    return after.range(of: "</think>") == nil
-  }
-
-  /// Returns true when `priorOutput` ended inside an unclosed Gemma 4
-  /// reasoning block (`<|channel>thought` opener with no `<channel|>` after
-  /// the last opener).
-  private func gemma4HasUnclosedReasoning(_ priorOutput: String?) -> Bool {
-    guard let priorOutput, !priorOutput.isEmpty else { return false }
-    guard let lastOpenRange = priorOutput.range(of: "<|channel>thought", options: .backwards) else {
-      return false
-    }
-    let after = priorOutput[lastOpenRange.upperBound...]
-    return after.range(of: "<channel|>") == nil
-  }
+  private static let thinkBoundary = DelimitedReasoningBoundary.think()
+  private static let thinkEndedByToolCallBoundary =
+    DelimitedReasoningBoundary.think(implicitEndTokens: ["<tool_call>"])
+  private static let gemma4ThoughtBoundary =
+    DelimitedReasoningBoundary(start: "<|channel>thought", end: "<channel|>")
+  private static let magistralThinkBoundary =
+    DelimitedReasoningBoundary(start: "[THINK]", end: "[/THINK]")
+  private static let thinkPreamble = ImplicitReasoningPreamble.think()
+  private static let thinkPreambleEndedByToolCall =
+    ImplicitReasoningPreamble.think(implicitEndTokens: ["<tool_call>"])
+  private static let kimiK2ThinkingPreamble =
+    ImplicitReasoningPreamble.think(implicitEndTokens: ["<|tool_calls_section_begin|>"])
+  private static let seedOssPreamble =
+    ImplicitReasoningPreamble(endTokens: ["</seed:think>"])
 
   /// Returns true when `priorOutput` ended inside an unclosed Harmony
   /// `analysis` block – the only Harmony state we resume from per
@@ -685,96 +707,6 @@ extension ResponseFormat {
     return true
   }
 
-  /// MiniMax M2 starts in reasoning by default (the chat template injects
-  /// the `<think>` opener). For continuation requests, the prior output
-  /// has already passed `</think>` if it appears anywhere in the prior
-  /// output – in that case the new parser starts in normal phase.
-  private func miniMaxM2InitialState(priorOutput: String?) -> MiniMaxM2Parser.InitialState {
-    if let priorOutput, priorOutput.range(of: "</think>") != nil {
-      return .normal
-    }
-    return .reasoning
-  }
-
-  /// Kimi K2 Thinking starts in reasoning by default – the chat
-  /// template configures the model to begin output inside an implicit
-  /// reasoning preamble (no `<think>` opener required, though one may
-  /// appear). Reasoning ends at the first `</think>` or at
-  /// `<|tool_calls_section_begin|>`. For continuation requests, prior
-  /// output containing either of those terminators means the new
-  /// parser starts in normal phase.
-  private func kimiK2ThinkingInitialState(priorOutput: String?) -> KimiK2Parser.InitialState {
-    if let priorOutput,
-       priorOutput.range(of: "</think>") != nil
-       || priorOutput.range(of: "<|tool_calls_section_begin|>") != nil
-    {
-      return .normal
-    }
-    return .reasoning
-  }
-
-  /// GLM 4.5+ starts in reasoning by default. Reasoning ends at either
-  /// `</think>` or the first `<tool_call>` marker, because GLM can
-  /// interrupt reasoning directly with a tool call.
-  private func glm4ThinkingInitialState(priorOutput: String?) -> Glm4Parser.InitialState {
-    if let priorOutput,
-       priorOutput.range(of: "</think>") != nil
-       || priorOutput.range(of: "<tool_call>") != nil
-    {
-      return .normal
-    }
-    return .reasoning
-  }
-
-  /// Magistral's `[THINK]...[/THINK]` preamble may be unclosed in
-  /// continuation requests. Find the last `[THINK]` opener in prior
-  /// output: if it lacks a matching `[/THINK]`, the prior chunk ended
-  /// mid-reasoning and the new parser starts already in reasoning
-  /// phase. Otherwise normal.
-  private func magistralInitialState(priorOutput: String?) -> MistralParser.InitialState {
-    guard let priorOutput, !priorOutput.isEmpty else { return .normal }
-    guard let lastOpenRange = priorOutput.range(of: "[THINK]", options: .backwards) else {
-      return .normal
-    }
-    let after = priorOutput[lastOpenRange.upperBound...]
-    return after.range(of: "[/THINK]") == nil ? .reasoning : .normal
-  }
-
-  /// Hunyuan A13B's chat template starts the response with `<think>\n`
-  /// when reasoning is enabled. For continuation requests, find the
-  /// last `<think>` opener in prior output: if it's not closed by a
-  /// matching `</think>`, the prior chunk ended mid-reasoning and the
-  /// new parser starts already in reasoning phase. Otherwise normal.
-  private func hunyuanA13BInitialState(priorOutput: String?) -> HunyuanA13BParser.InitialState {
-    guard let priorOutput, !priorOutput.isEmpty else { return .normal }
-    guard let lastOpenRange = priorOutput.range(of: "<think>", options: .backwards) else {
-      return .normal
-    }
-    let after = priorOutput[lastOpenRange.upperBound...]
-    return after.range(of: "</think>") == nil ? .reasoning : .normal
-  }
-
-  /// ERNIE Thinking models usually start inside an implicit `<think>`
-  /// block because the opener is injected by the chat template. A prior
-  /// output containing `</think>` has already exited reasoning.
-  private func ernieThinkingInitialState(priorOutput: String?) -> ErnieParser.InitialState {
-    if let priorOutput, priorOutput.range(of: "</think>") != nil {
-      return .normal
-    }
-    return .reasoning
-  }
-
-  /// OLMo 3 Think models use the same implicit `<think>` preamble
-  /// convention as ERNIE Thinking: a fresh response starts in
-  /// reasoning, and a continuation with `</think>` already observed
-  /// resumes in normal phase.
-  private func olmo3ThinkingInitialState(priorOutput: String?) -> PythonicParser.InitialState {
-    if let priorOutput, priorOutput.range(of: "</think>") != nil {
-      return .normal
-    }
-    return .reasoning
-  }
-
   /// Granite reasoning is opt-in by the model output: a fresh response
   /// always starts in `preReasoning` (auto-detect from prefix). For
   /// continuation requests, prior output that contains
@@ -791,44 +723,6 @@ extension ResponseFormat {
     let hasResp = responseStarts.contains { priorOutput.range(of: $0) != nil }
     if hasThink, !hasResp { return .reasoning }
     return .normal
-  }
-
-  /// DeepSeek-R1 starts in reasoning by default. The original R1 model
-  /// emits reasoning text directly without a leading `<think>` opener;
-  /// R1-0528 emits the opener but the parser's reasoning phase handles
-  /// both shapes uniformly. For continuation requests, presence of
-  /// `</think>` anywhere in `priorOutput` means the prior chunk has
-  /// already exited reasoning, so the new parser starts in normal phase.
-  /// Mirrors SGLang's `DeepSeekR1Detector` (`force_reasoning=True`).
-  private func deepseekR1InitialState(priorOutput: String?) -> DeepSeekR1Parser.InitialState {
-    if let priorOutput, priorOutput.range(of: "</think>") != nil {
-      return .normal
-    }
-    return .reasoning
-  }
-
-  /// Seed-OSS starts in reasoning by default – the chat template injects
-  /// `<seed:think>` and the model emits reasoning content before any
-  /// tool call. Mirrors vLLM's `SeedOSSReasoningParser`, which (like
-  /// R1) tolerates output that lacks the opener. Continuation: prior
-  /// output containing `</seed:think>` means reasoning already exited.
-  private func seedOssInitialState(priorOutput: String?) -> Qwen3XmlParser.InitialState {
-    if let priorOutput, priorOutput.range(of: "</seed:think>") != nil {
-      return .normal
-    }
-    return .reasoning
-  }
-
-  /// Step-3.5 starts in reasoning by default, matching vLLM's
-  /// `Step3p5ReasoningParser`: the chat template may inject the
-  /// opening marker, so model output can begin with raw reasoning text
-  /// and only emit `</think>`. Continuation: prior output containing
-  /// `</think>` means reasoning already exited.
-  private func step3p5InitialState(priorOutput: String?) -> Qwen3XmlParser.InitialState {
-    if let priorOutput, priorOutput.range(of: "</think>") != nil {
-      return .normal
-    }
-    return .reasoning
   }
 }
 

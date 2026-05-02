@@ -42,6 +42,12 @@ struct NamePrefixDispatchTests {
   }
 
   @Test
+  func `Qwen 3.6 routes to qwen3Xml by name`() {
+    let f = ResponseFormat.infer(modelName: "Qwen/Qwen3.6-35B-A3B-FP8", modelType: "", modelConfig: [:])
+    #expect(f == .qwen3Xml)
+  }
+
+  @Test
   func `Qwen 3 base (no special suffix) routes to qwen via type fallback`() {
     let f = ResponseFormat.infer(modelName: "Qwen/Qwen3-7B", modelType: "qwen3", modelConfig: [:])
     #expect(f == .qwen)
@@ -213,6 +219,12 @@ struct TypeFallbackDispatchTests {
   @Test
   func `qwen3_5 model_type routes to qwen3Xml even without name signal`() {
     let f = ResponseFormat.infer(modelName: "", modelType: "qwen3_5", modelConfig: [:])
+    #expect(f == .qwen3Xml)
+  }
+
+  @Test
+  func `qwen3_5_moe model_type routes to qwen3Xml for Qwen 3.6 MoE`() {
+    let f = ResponseFormat.infer(modelName: "", modelType: "qwen3_5_moe", modelConfig: [:])
     #expect(f == .qwen3Xml)
   }
 
