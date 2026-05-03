@@ -20,7 +20,7 @@ The package includes two library products:
 Add the package as a dependency in your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/DePasqualeOrg/swift-lm-response-parser", from: "0.1.0")
+.package(url: "https://github.com/DePasqualeOrg/swift-lm-response-parser", from: "0.1.1")
 ```
 
 Then add the library you need to your target. Parser-only consumers depend on `LMResponseParser`:
