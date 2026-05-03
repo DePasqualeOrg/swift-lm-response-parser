@@ -82,6 +82,7 @@ struct Glm4Parser: ResponseFormatParser {
   private static let argValueOpen = "<arg_value>"
   private static let argValueClose = "</arg_value>"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   /// Cursor over the buffer for non-tool-call content emission. Advances
@@ -171,6 +172,7 @@ struct Glm4Parser: ResponseFormatParser {
     if thinkPreamble.phase == .done {
       events.append(contentsOf: scan(isEnd: false))
     }
+    pruneConsumedPrefix()
     return events
   }
 
@@ -338,6 +340,21 @@ struct Glm4Parser: ResponseFormatParser {
       n += 1
     }
     return n
+  }
+
+  /// Drop any prefix that has already been emitted as message text or
+  /// structurally consumed as closed tool-call regions. An incomplete
+  /// `<tool_call>` remains in the buffer so the rebuild-and-diff path can
+  /// continue from the active region on the next chunk.
+  private mutating func pruneConsumedPrefix() {
+    guard sentContentIdx > 0 else { return }
+
+    buffer.removeFirst(sentContentIdx)
+    sentContentIdx = 0
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
   }
 
   private mutating func emitContent(from: Int, to end: Int, chars: [Character]) -> [ResponseStreamingEvent] {

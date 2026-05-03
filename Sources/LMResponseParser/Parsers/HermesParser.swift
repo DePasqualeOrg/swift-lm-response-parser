@@ -16,10 +16,11 @@ import Foundation
 /// `<tool_call>` wrapper each.
 ///
 /// **Streaming algorithm.** On each call to ``process(_:)``, the parser
-/// appends the new text to a full-output buffer, then re-scans the buffer
-/// to find all `<tool_call>` regions and diffs them against per-tool
-/// emitted state to produce only the new content / name / argument-fragment
-/// events.
+/// appends the new text to an active buffer, scans visible `<tool_call>`
+/// regions, and diffs them against per-tool emitted state to produce only
+/// the new content / name / argument-fragment events. After the scan it
+/// drops any prefix that has already been emitted or structurally consumed,
+/// keeping only active regions and marker-holdback bytes.
 ///
 /// **Reasoning extraction is not in this parser.** The Hermes-2 and Nous
 /// model families do not emit `<think>` reasoning markers; the Qwen 2.5 /
@@ -30,7 +31,7 @@ struct HermesParser: ResponseFormatParser {
   private let toolCallEnd: String
   private let argumentsMayBeJSONString: Bool
 
-  // Full accumulated output. Re-scanned on every process() call.
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   // Index into `buffer` of the last character that has been emitted as
@@ -155,6 +156,7 @@ struct HermesParser: ResponseFormatParser {
     }
     events.append(contentsOf: flushContent(isEnd: isEnd))
 
+    pruneConsumedPrefix()
     return events
   }
 
@@ -332,6 +334,36 @@ struct HermesParser: ResponseFormatParser {
     }
 
     return events
+  }
+
+  /// Drop any buffer prefix that the scan has already emitted as content
+  /// or consumed as closed tool-call structure. Open tool-call regions stay
+  /// in the buffer so later chunks can be diffed against their existing
+  /// `OpenToolCall` state.
+  private mutating func pruneConsumedPrefix() {
+    guard sentContentIdx > 0 else { return }
+
+    let dropCount = sentContentIdx
+    let regions = extractToolCallRegions()
+    var completedRegionsToDrop = 0
+
+    for (index, region) in regions.enumerated() {
+      guard index < toolCalls.count,
+            let endIdx = region.endIdxAfterClose
+      else {
+        break
+      }
+      let endOffset = buffer.distance(from: buffer.startIndex, to: endIdx)
+      guard endOffset <= dropCount else { break }
+      completedRegionsToDrop += 1
+    }
+
+    if completedRegionsToDrop > 0 {
+      toolCalls.removeFirst(completedRegionsToDrop)
+    }
+
+    buffer.removeFirst(dropCount)
+    sentContentIdx = 0
   }
 
   /// Apply Granite-4-style decoding when the `arguments` field is a

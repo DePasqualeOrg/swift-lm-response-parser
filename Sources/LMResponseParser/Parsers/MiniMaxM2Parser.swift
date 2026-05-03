@@ -65,6 +65,7 @@ struct MiniMaxM2Parser: ResponseFormatParser {
   private static let parameterStart = "<parameter"
   private static let parameterEnd = "</parameter>"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   private enum Phase { case reasoning, normal }
@@ -215,6 +216,7 @@ struct MiniMaxM2Parser: ResponseFormatParser {
           events.append(contentsOf: scanNormal(isEnd: isEnd))
       }
     }
+    pruneConsumedPrefix()
     return events
   }
 
@@ -441,6 +443,35 @@ struct MiniMaxM2Parser: ResponseFormatParser {
       return i
     }
     return nil
+  }
+
+  /// Drop any prefix that has already been emitted or structurally consumed.
+  /// Open invokes keep their streamed JSON state, while their body offsets are
+  /// rebased so the rebuild-and-diff pass can continue from the retained
+  /// active suffix.
+  private mutating func pruneConsumedPrefix() {
+    let dropCount: Int = switch phase {
+      case .reasoning:
+        sentReasoningIdx
+      case .normal:
+        sentContentIdx
+    }
+    guard dropCount > 0 else { return }
+
+    buffer.removeFirst(dropCount)
+    rebase(&sentReasoningIdx, dropping: dropCount)
+    rebase(&sentContentIdx, dropping: dropCount)
+    for index in toolCalls.indices {
+      rebase(&toolCalls[index].bodyStartOffset, dropping: dropCount)
+    }
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
+  }
+
+  private func rebase(_ cursor: inout Int, dropping dropCount: Int) {
+    cursor = Swift.max(0, cursor - dropCount)
   }
 
   private func firstIndexOf(character: Character, in chars: [Character], after: Int) -> Int? {

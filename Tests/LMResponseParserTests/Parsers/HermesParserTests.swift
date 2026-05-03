@@ -368,6 +368,71 @@ struct HermesBoundaryTests {
     #expect(parsed?["location"] as? String == "San Francisco, California, United States")
     #expect(parsed?["unit"] as? String == "celsius")
   }
+
+  @Test
+  func `Fixed chunks preserve exact text and argument deltas`() {
+    let chunks = [
+      "Hello ",
+      "<tool_call>",
+      #"{"name":"f","arguments":{"x":"#,
+      "1",
+      "}}",
+      "</tool_call>",
+      " done",
+    ]
+    var parser = HermesParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(events.map(eventKind) == [
+      "outputItemAdded",
+      "contentPartAdded",
+      "outputTextDelta",
+      "outputTextDone",
+      "contentPartDone",
+      "outputItemDone",
+      "outputItemAdded",
+      "functionCallArgumentsDelta",
+      "functionCallArgumentsDelta",
+      "functionCallArgumentsDelta",
+      "functionCallArgumentsDone",
+      "outputItemDone",
+      "outputItemAdded",
+      "contentPartAdded",
+      "outputTextDelta",
+      "outputTextDone",
+      "contentPartDone",
+      "outputItemDone",
+    ])
+    #expect(outputTextDeltas(from: events) == ["Hello ", " done"])
+    #expect(argumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+  }
+
+  @Test
+  func `Closed call followed by later call preserves item indexes`() {
+    let chunks = [
+      #"<tool_call>{"name":"first","arguments":{"x":1}}</tool_call>"#,
+      " between ",
+      #"<tool_call>{"name":"second","arguments":{"y":2}}</tool_call>"#,
+    ]
+    var parser = HermesParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2])
+    #expect(outputTextDeltas(from: events) == [" between "])
+    #expect(argumentDeltas(from: events) == [#"{"x":1}"#, #"{"y":2}"#])
+  }
 }
 
 @Suite("HermesParser — finalize cases")
@@ -667,4 +732,18 @@ private func streamWithInterval(text: String, interval: Int) -> [ResponseOutputI
 private func parseArgs(_ args: String) -> [String: Any]? {
   guard let data = args.data(using: .utf8) else { return nil }
   return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+
+private func outputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func argumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
+  }
 }

@@ -60,6 +60,7 @@ struct DeepSeekV32Parser: ResponseFormatParser {
   private static let parameterStart = "<｜DSML｜parameter"
   private static let parameterEnd = "</｜DSML｜parameter>"
 
+  /// Active suffix that has not yet been proven safe to discard.
   private var buffer: String = ""
   private var sentContentIdx: Int = 0
 
@@ -147,6 +148,8 @@ struct DeepSeekV32Parser: ResponseFormatParser {
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
+    defer { pruneConsumedPrefix() }
+
     let bufChars = Array(buffer)
     let envStartChars = Array(DeepSeekV32Parser.envelopeStart)
     let envEndChars = Array(DeepSeekV32Parser.envelopeEnd)
@@ -218,6 +221,17 @@ struct DeepSeekV32Parser: ResponseFormatParser {
     }
 
     return events
+  }
+
+  private mutating func pruneConsumedPrefix() {
+    let dropCount = min(envelopeCursor ?? sentContentIdx, buffer.count)
+    guard dropCount > 0 else { return }
+
+    buffer.removeFirst(dropCount)
+    sentContentIdx = max(0, sentContentIdx - dropCount)
+    if let cursor = envelopeCursor {
+      envelopeCursor = max(0, cursor - dropCount)
+    }
   }
 
   private mutating func flushContent(isEnd: Bool) -> [ResponseStreamingEvent] {

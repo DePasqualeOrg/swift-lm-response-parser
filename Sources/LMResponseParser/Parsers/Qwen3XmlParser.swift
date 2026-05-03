@@ -61,10 +61,22 @@ struct Qwen3XmlParser: ResponseFormatParser {
   private static let parameterStart = "<parameter="
   private static let parameterEnd = "</parameter>"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   private enum Phase { case reasoning, normal }
   private var phase: Phase
+
+  /// Whether the beginning of the current reasoning block has already been
+  /// checked for an optional model-emitted `<think>` marker. Kept separate
+  /// from `sentReasoningIdx` so buffer pruning can rebase the cursor to zero
+  /// without making a later literal `<think>` look like a fresh opener.
+  private var reasoningStartResolved: Bool = false
+
+  /// True until the normal phase emits content or opens a function call.
+  /// Closed tool-call slots used to preserve this "start of normal output"
+  /// fact implicitly; pruning removes those slots, so keep the fact directly.
+  private var normalPhaseCanStartReasoning: Bool = true
 
   private var sentReasoningIdx: Int = 0
 
@@ -211,6 +223,7 @@ struct Qwen3XmlParser: ResponseFormatParser {
           events.append(contentsOf: scanNormal(isEnd: isEnd))
       }
     }
+    pruneConsumedPrefix()
     return events
   }
 
@@ -224,16 +237,22 @@ struct Qwen3XmlParser: ResponseFormatParser {
     let thinkEndChars = Array(thinkEnd)
     let toolStartChars = Array(toolCallStart)
 
-    if sentReasoningIdx == 0,
-       bufChars.count >= thinkStartChars.count,
-       Array(bufChars[0 ..< thinkStartChars.count]) == thinkStartChars
-    {
-      sentReasoningIdx = thinkStartChars.count
-    } else if sentReasoningIdx == 0, !isEnd {
-      // Buffer might still grow into a leading `<think>`.
-      let limit = Swift.min(bufChars.count, thinkStartChars.count - 1)
-      if limit > 0, bufChars[..<limit].elementsEqual(thinkStartChars[..<limit]), limit == bufChars.count {
-        return events
+    if !reasoningStartResolved {
+      if sentReasoningIdx == 0,
+         bufChars.count >= thinkStartChars.count,
+         Array(bufChars[0 ..< thinkStartChars.count]) == thinkStartChars
+      {
+        sentReasoningIdx = thinkStartChars.count
+        reasoningStartResolved = true
+      } else if sentReasoningIdx == 0, !isEnd {
+        // Buffer might still grow into a leading `<think>`.
+        let limit = Swift.min(bufChars.count, thinkStartChars.count - 1)
+        if limit > 0, bufChars[..<limit].elementsEqual(thinkStartChars[..<limit]), limit == bufChars.count {
+          return events
+        }
+        reasoningStartResolved = true
+      } else {
+        reasoningStartResolved = true
       }
     }
 
@@ -322,6 +341,7 @@ struct Qwen3XmlParser: ResponseFormatParser {
         parsedIdx = exitIdx
     }
     events.append(contentsOf: closeReasoning(status: .completed))
+    reasoningStartResolved = false
     phase = .normal
     return events
   }
@@ -335,7 +355,7 @@ struct Qwen3XmlParser: ResponseFormatParser {
 
     // Older Qwen 3 templates may emit `<think>`; honor it when we are
     // still at the very start of normal-phase processing.
-    if openMessage == nil, openReasoning == nil, toolCalls.isEmpty {
+    if normalPhaseCanStartReasoning, openMessage == nil, openReasoning == nil {
       if let _ = transitionToReasoningIfMarkerPresent(isEnd: isEnd) {
         return events
       }
@@ -526,6 +546,7 @@ struct Qwen3XmlParser: ResponseFormatParser {
 
     let chunk = String(bufChars[parsedIdx ..< sendableEnd])
     parsedIdx = sendableEnd
+    normalPhaseCanStartReasoning = false
     if chunk.isEmpty { return [] }
 
     var events: [ResponseStreamingEvent] = []
@@ -555,6 +576,7 @@ struct Qwen3XmlParser: ResponseFormatParser {
     if available >= thinkStartChars.count {
       if Array(bufChars[cursor ..< cursor + thinkStartChars.count]) == thinkStartChars {
         sentReasoningIdx = cursor + thinkStartChars.count
+        reasoningStartResolved = true
         phase = .reasoning
         return []
       }
@@ -588,6 +610,8 @@ struct Qwen3XmlParser: ResponseFormatParser {
   }
 
   private mutating func openFunction(name: String) -> [ResponseStreamingEvent] {
+    normalPhaseCanStartReasoning = false
+
     // Defensive: if no <tool_call> was seen but we got <function=…>,
     // open a slot now.
     if toolCalls.last?.closed != false {
@@ -708,6 +732,31 @@ struct Qwen3XmlParser: ResponseFormatParser {
         sequenceNumber: takeSequence(),
       )),
     ]
+  }
+
+  /// Drop any buffer prefix that has already been emitted or structurally
+  /// consumed. Active XML tags, held marker suffixes, and open tool-call
+  /// envelopes remain in the buffer so later chunks can complete them.
+  private mutating func pruneConsumedPrefix() {
+    let dropCount: Int = switch phase {
+      case .reasoning:
+        sentReasoningIdx
+      case .normal:
+        parsedIdx
+    }
+    guard dropCount > 0 else { return }
+
+    buffer.removeFirst(dropCount)
+    rebase(&sentReasoningIdx, dropping: dropCount)
+    rebase(&parsedIdx, dropping: dropCount)
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
+  }
+
+  private func rebase(_ cursor: inout Int, dropping dropCount: Int) {
+    cursor = Swift.max(0, cursor - dropCount)
   }
 
   // MARK: Argument coercion

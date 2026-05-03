@@ -159,11 +159,55 @@ struct LongcatEnvelopeTests {
       Issue.record("expected matching function call items")
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact LongCat deltas`() {
+    let chunks = [
+      "Intro ",
+      "<longcat_tool_call>",
+      #"{"name":"f","arguments":{"x":"#,
+      "1",
+      "}}",
+      "</longcat_tool_call>",
+      " outro",
+    ]
+    var parser = HermesParser(
+      toolCallStart: "<longcat_tool_call>",
+      toolCallEnd: "</longcat_tool_call>",
+    )
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(longcatOutputTextDeltas(from: events) == ["Intro ", " outro"])
+    #expect(longcatArgumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2])
+  }
 }
 
 private func parseLongcatArgs(_ args: String) -> [String: Any]? {
   guard let data = args.data(using: .utf8) else { return nil }
   return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+}
+
+private func longcatOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func longcatArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
+  }
 }
 
 @Suite("ResponseFormat dispatch — LongCat")

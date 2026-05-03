@@ -410,6 +410,63 @@ struct HarmonyStreamingTests {
     }
     #expect(deltas.joined() == "The answer is 42.")
   }
+
+  @Test
+  func `Fixed chunks preserve exact reasoning tool and final deltas`() {
+    let chunks = [
+      "<|channel|>analysis<|message|>",
+      "think ",
+      "more",
+      "<|end|>",
+      "<|start|>assistant<|channel|>commentary to=functions.f<|message|>",
+      #"{"x":"#,
+      "1",
+      "}",
+      "<|call|>",
+      "comment",
+      "ary",
+      "<|start|>assistant<|channel|>final<|message|>",
+      "Done",
+      "<|return|>",
+    ]
+
+    var parser = HarmonyParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2])
+    #expect(harmonyReasoningDeltas(from: events) == ["think ", "more"])
+    #expect(harmonyArgumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+    #expect(harmonyOutputTextDeltas(from: events) == ["Done"])
+  }
+}
+
+private func harmonyReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .reasoningDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func harmonyOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func harmonyArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
+  }
 }
 
 @Suite("HarmonyParser — commentary filler")

@@ -68,10 +68,22 @@ struct DeepSeekR1Parser: ResponseFormatParser {
   /// newline either.
   private static let jsonFenceClose = "\n```"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   private enum Phase { case reasoning, normal }
   private var phase: Phase
+
+  /// Whether the beginning of the current reasoning block has already been
+  /// checked for an optional model-emitted `<think>` marker. Kept separate
+  /// from `sentReasoningIdx` so buffer pruning can rebase the cursor to zero
+  /// without making a later literal `<think>` look like a fresh opener.
+  private var reasoningStartResolved: Bool = false
+
+  /// True until the normal phase emits content or opens a valid function call.
+  /// Closed tool-call slots used to preserve this "start of normal output"
+  /// fact implicitly; pruning removes those slots, so keep the fact directly.
+  private var normalPhaseCanStartReasoning: Bool = true
 
   private var sentReasoningIdx: Int = 0
   private var parsedIdx: Int = 0
@@ -189,6 +201,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
           events.append(contentsOf: scanNormal(isEnd: isEnd))
       }
     }
+    pruneConsumedPrefix()
     return events
   }
 
@@ -202,7 +215,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
     let thinkEndChars = Array(DeepSeekR1Parser.thinkEnd)
     let toolBeginChars = Array(DeepSeekR1Parser.toolCallsBegin)
 
-    if sentReasoningIdx == 0 {
+    if !reasoningStartResolved {
       // Tolerate leading whitespace before an optional `<think>`
       // opener. R1-0528 emits `<think>`; the original R1 emits
       // reasoning content directly with no opener. If `<think>`
@@ -219,15 +232,19 @@ struct DeepSeekR1Parser: ResponseFormatParser {
         // can decide whether `<think>` follows.
         if !isEnd { return events }
         sentReasoningIdx = bufChars.count
+        reasoningStartResolved = true
       } else if available >= thinkStartChars.count,
                 Array(bufChars[cursor ..< cursor + thinkStartChars.count]) == thinkStartChars
       {
         sentReasoningIdx = cursor + thinkStartChars.count
+        reasoningStartResolved = true
       } else if available < thinkStartChars.count, !isEnd,
                 Array(bufChars[cursor ..< bufChars.count]) == Array(thinkStartChars[..<available])
       {
         // Buffer ends mid-`<think>` after whitespace: hold.
         return events
+      } else {
+        reasoningStartResolved = true
       }
       // Otherwise: not a `<think>` opener. Leave sentReasoningIdx
       // at 0 so the model's reasoning content (R1 base) streams
@@ -303,6 +320,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
         parsedIdx = exitIdx
     }
     events.append(contentsOf: closeReasoning(status: .completed))
+    reasoningStartResolved = false
     phase = .normal
     return events
   }
@@ -360,7 +378,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
   private mutating func scanNormal(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
 
-    if openMessage == nil, openReasoning == nil, toolCalls.isEmpty {
+    if normalPhaseCanStartReasoning, openMessage == nil, openReasoning == nil {
       if let _ = transitionToReasoningIfMarkerPresent(isEnd: isEnd) {
         return events
       }
@@ -514,6 +532,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
     let outputIndex = takeOutputIndex()
     call.outputIndex = outputIndex
     toolCalls[callIndex] = call
+    normalPhaseCanStartReasoning = false
 
     events.append(.outputItemAdded(.init(
       item: .functionCall(.init(
@@ -621,6 +640,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
     let chunk = String(bufChars[parsedIdx ..< sendableEnd])
     parsedIdx = sendableEnd
     if chunk.isEmpty { return [] }
+    normalPhaseCanStartReasoning = false
 
     var events: [ResponseStreamingEvent] = []
     if openMessage == nil {
@@ -657,6 +677,7 @@ struct DeepSeekR1Parser: ResponseFormatParser {
       if Array(bufChars[cursor ..< cursor + thinkStartChars.count]) == thinkStartChars {
         parsedIdx = cursor + thinkStartChars.count
         sentReasoningIdx = parsedIdx
+        reasoningStartResolved = true
         phase = .reasoning
         return []
       }
@@ -690,6 +711,31 @@ struct DeepSeekR1Parser: ResponseFormatParser {
   }
 
   // MARK: Item open/close
+
+  /// Drop any buffer prefix that has already been emitted or structurally
+  /// consumed. Active marker suffixes and open tool-call state remain in the
+  /// buffer/state so later chunks can complete them.
+  private mutating func pruneConsumedPrefix() {
+    let dropCount: Int = switch phase {
+      case .reasoning:
+        sentReasoningIdx
+      case .normal:
+        parsedIdx
+    }
+    guard dropCount > 0 else { return }
+
+    buffer.removeFirst(dropCount)
+    rebase(&sentReasoningIdx, dropping: dropCount)
+    rebase(&parsedIdx, dropping: dropCount)
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
+  }
+
+  private func rebase(_ cursor: inout Int, dropping dropCount: Int) {
+    cursor = Swift.max(0, cursor - dropCount)
+  }
 
   private mutating func closeToolCall(at index: Int, status: ItemStatus) -> [ResponseStreamingEvent] {
     var call = toolCalls[index]

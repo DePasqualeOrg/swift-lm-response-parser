@@ -412,6 +412,48 @@ struct QwenStreamingBoundaryTests {
     guard case let .functionCall(f) = items[2] else { Issue.record("Expected function call"); return }
     #expect(f.name == "fn")
   }
+
+  @Test
+  func `Fixed chunks preserve exact reasoning text and argument deltas`() {
+    let chunks = [
+      "<think>Plan ",
+      "more",
+      "</think>",
+      "Answer ",
+      "<tool_call>",
+      #"{"name":"f","arguments":{"x":"#,
+      "1",
+      "}}",
+      "</tool_call>",
+      " tail",
+    ]
+    var parser = QwenParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(qwenReasoningDeltas(from: events) == ["Plan ", "more"])
+    #expect(qwenOutputTextDeltas(from: events) == ["Answer ", " tail"])
+    #expect(qwenArgumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2, 3])
+  }
+
+  @Test
+  func `Literal think marker inside ongoing reasoning is preserved across chunks`() {
+    var parser = QwenParser()
+    var events = parser.process(ParserInput(text: "<think>first "))
+    events += parser.process(ParserInput(text: "<think>literal</think>after"))
+    events += parser.finalize()
+
+    #expect(qwenReasoningDeltas(from: events) == ["first ", "<think>literal"])
+    #expect(qwenOutputTextDeltas(from: events) == ["after"])
+  }
 }
 
 @Suite("QwenParser — multiple tool calls")
@@ -477,6 +519,54 @@ struct QwenMultipleToolCallsTests {
       return decoded["city"] as? String
     }
     #expect(cities == ["NYC", "Baltimore", "LA"])
+  }
+
+  @Test
+  func `Closed call followed by text and later call preserves exact deltas`() {
+    let chunks = [
+      #"<tool_call>{"name":"first","arguments":{"x":1}}</tool_call>"#,
+      " between ",
+      #"<tool_call>{"name":"second","arguments":{"y":2}}</tool_call>"#,
+    ]
+    var parser = QwenParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2])
+    #expect(qwenOutputTextDeltas(from: events) == [" between "])
+    #expect(qwenArgumentDeltas(from: events) == [#"{"x":1}"#, #"{"y":2}"#])
+  }
+
+  @Test
+  func `Think tags after a closed tool call stay normal content`() {
+    let chunks = [
+      #"<tool_call>{"name":"first","arguments":{"x":1}}</tool_call>"#,
+      "<think>after</think>",
+    ]
+    var parser = QwenParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let items = accumulateItems(from: events)
+    #expect(items.count == 2)
+    guard case .functionCall = items[0],
+          case let .message(message) = items[1],
+          case let .outputText(text) = message.content[0]
+    else {
+      Issue.record("Expected tool call then message")
+      return
+    }
+    #expect(text.text == "after")
   }
 }
 
@@ -658,5 +748,26 @@ struct QwenParametersAliasTests {
     let decodedData = try #require(f.arguments.data(using: .utf8))
     let decoded = try #require(JSONSerialization.jsonObject(with: decodedData) as? [String: Any])
     #expect(decoded["city"] as? String == "Tokyo")
+  }
+}
+
+private func qwenReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .reasoningDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func qwenOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func qwenArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
   }
 }

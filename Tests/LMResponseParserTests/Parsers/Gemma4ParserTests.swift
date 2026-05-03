@@ -396,6 +396,75 @@ struct Gemma4StreamingTests {
     }
     #expect(deltas.joined() == "first second third")
   }
+
+  @Test
+  func `Fixed chunks preserve exact reasoning text and argument deltas`() {
+    let chunks = [
+      "<|channel>thought\nrea",
+      "son<channel|>prefix ",
+      "<|tool",
+      "_call>call:f{x:1}<tool_call|>",
+      " suffix",
+    ]
+
+    var parser = Gemma4Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2, 3])
+    #expect(gemma4ReasoningDeltas(from: events) == ["rea", "son"])
+    #expect(gemma4OutputTextDeltas(from: events) == ["prefix ", " suffix"])
+    #expect(gemma4ArgumentDeltas(from: events) == [#"{"x":1}"#])
+  }
+
+  @Test
+  func `Literal channel marker inside ongoing reasoning is preserved across chunks`() {
+    let chunks = [
+      "<|channel>thought\nfirst ",
+      "<|channel>thought literal<channel|>after",
+    ]
+
+    var parser = Gemma4Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(gemma4ReasoningDeltas(from: events) == ["first ", "<|channel>thought literal"])
+    #expect(gemma4OutputTextDeltas(from: events) == ["after"])
+  }
+
+  @Test
+  func `Closed call followed by text and later call preserves exact deltas`() {
+    let chunks = [
+      "<|tool_call>call:first{x:1}<tool_call|>",
+      " gap ",
+      "<|tool_call>call:second{y:2}<tool_call|>",
+    ]
+
+    var parser = Gemma4Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(gemma4OutputTextDeltas(from: events) == [" gap "])
+    #expect(gemma4ArgumentDeltas(from: events) == [#"{"x":1}"#, #"{"y":2}"#])
+  }
 }
 
 @Suite("Gemma4Parser — continuation")
@@ -572,5 +641,32 @@ struct Gemma4AdversarialTests {
       if case let .reasoningDelta(e) = ev { return e.delta } else { return nil }
     }
     #expect(deltas.joined() == "reasoning here")
+  }
+}
+
+private func gemma4ReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .reasoningDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func gemma4OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func gemma4ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
   }
 }

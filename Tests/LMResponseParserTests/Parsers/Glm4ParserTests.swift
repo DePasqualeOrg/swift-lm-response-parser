@@ -194,6 +194,67 @@ struct Glm4BasicsTests {
       #expect(parsed?["unit"] as? String == "celsius", "interval=\(interval)")
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact text and string argument deltas`() {
+    let tools: [ToolSpec] = [[
+      "function": [
+        "name": "fn",
+        "parameters": [
+          "properties": [
+            "text": ["type": "string"] as [String: any Sendable],
+          ] as [String: any Sendable],
+        ] as [String: any Sendable],
+      ] as [String: any Sendable],
+    ]]
+    let chunks = [
+      "prefix ",
+      "<tool",
+      "_call>fn\n<arg_key>text</arg_key>\n<arg_value>he",
+      "llo",
+      "</arg_value>\n</tool_call>",
+      " suffix",
+    ]
+
+    var parser = Glm4Parser(tools: tools)
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(glm4OutputTextDeltas(from: events) == ["prefix ", " suffix"])
+    #expect(glm4ArgumentDeltas(from: events) == [#"{"text": "he"#, "llo", "\"}"])
+  }
+
+  @Test
+  func `Closed call followed by text and later call preserves exact deltas`() {
+    let chunks = [
+      "<tool_call>first\n<arg_key>a</arg_key>\n<arg_value>1</arg_value>\n</tool_call>",
+      " gap ",
+      "<tool_call>second\n<arg_key>b</arg_key>\n<arg_value>2</arg_value>\n</tool_call>",
+    ]
+
+    var parser = Glm4Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(glm4OutputTextDeltas(from: events) == [" gap "])
+    #expect(glm4ArgumentDeltas(from: events) == [#"{"a": 1}"#, #"{"b": 2}"#])
+  }
 }
 
 @Suite("Glm4Parser — GLM 4.7 zero-arg form")
@@ -617,5 +678,23 @@ struct Glm4AdversarialTests {
     // which returns Python `True` → `json.dumps(True) == "true"`.
     #expect(decoded["a"] as? Bool == true)
     #expect(decoded["b"] as? Bool == false)
+  }
+}
+
+private func glm4OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func glm4ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
   }
 }

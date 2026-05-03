@@ -28,6 +28,7 @@ import Foundation
 struct Granite20bFcParser: ResponseFormatParser {
   private static let marker = "<function_call>"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
   private var sentContentIdx: Int = 0
   /// Set once a `<function_call>` marker has been observed. After
@@ -91,6 +92,7 @@ struct Granite20bFcParser: ResponseFormatParser {
       events.append(contentsOf: processRegion(at: index, region: region, isEnd: isEnd))
     }
     events.append(contentsOf: flushContent(isEnd: isEnd))
+    pruneConsumedPrefix()
     return events
   }
 
@@ -334,6 +336,34 @@ struct Granite20bFcParser: ResponseFormatParser {
       let s = String(data: serialized, encoding: .utf8)
     else { return trimmed }
     return s
+  }
+
+  /// Drop any buffer prefix that has already been emitted as leading content
+  /// or consumed as complete tool-call structure. The active JSON object stays
+  /// in the buffer so brace balancing and final argument extraction still see
+  /// the full current object.
+  private mutating func pruneConsumedPrefix() {
+    guard sentContentIdx > 0 else { return }
+
+    let dropCount = sentContentIdx
+    let regions = extractRegions()
+    var completedRegionsToDrop = 0
+    for (index, region) in regions.enumerated() {
+      guard index < toolCalls.count,
+            let endOffset = region.endOffset
+      else {
+        break
+      }
+      guard endOffset <= dropCount else { break }
+      completedRegionsToDrop += 1
+    }
+
+    if completedRegionsToDrop > 0 {
+      toolCalls.removeFirst(completedRegionsToDrop)
+    }
+
+    buffer.removeFirst(dropCount)
+    sentContentIdx = 0
   }
 
   // MARK: Item open/close

@@ -295,6 +295,74 @@ struct MiniMaxM2StreamingTests {
       }
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact reasoning text and string argument deltas`() {
+    let tools: [ToolSpec] = [[
+      "function": [
+        "name": "fn",
+        "parameters": [
+          "properties": [
+            "text": ["type": "string"] as [String: any Sendable],
+          ] as [String: any Sendable],
+        ] as [String: any Sendable],
+      ] as [String: any Sendable],
+    ]]
+    let chunks = [
+      "think",
+      "ing</think>prefix ",
+      "<minimax",
+      ":tool_call>",
+      #"<invoke name="fn"><parameter name="text">he"#,
+      "llo",
+      "</parameter></invoke></minimax:tool_call>",
+      " suffix",
+    ]
+
+    var parser = MiniMaxM2Parser(tools: tools)
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2, 3])
+    #expect(miniMaxM2ReasoningDeltas(from: events) == ["think", "ing"])
+    #expect(miniMaxM2OutputTextDeltas(from: events) == ["prefix ", " suffix"])
+    #expect(miniMaxM2ArgumentDeltas(from: events) == [#"{"text": "he"#, "llo", "\"}"])
+  }
+
+  @Test
+  func `Closed invoke followed by text and later invoke preserves exact deltas`() {
+    let chunks = [
+      "</think><minimax:tool_call>"
+        + #"<invoke name="first"><parameter name="a">1</parameter></invoke>"#
+        + "</minimax:tool_call>",
+      " gap ",
+      "<minimax:tool_call>"
+        + #"<invoke name="second"><parameter name="b">2</parameter></invoke>"#
+        + "</minimax:tool_call>",
+    ]
+
+    var parser = MiniMaxM2Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(miniMaxM2OutputTextDeltas(from: events) == [" gap "])
+    #expect(miniMaxM2ArgumentDeltas(from: events) == [#"{"a": "1"}"#, #"{"b": "2"}"#])
+  }
 }
 
 @Suite("MiniMaxM2Parser — incremental streaming")
@@ -650,5 +718,32 @@ struct MiniMaxM2TypePriorityTests {
     let decodedData = try #require(f.arguments.data(using: .utf8))
     let decoded = try #require(JSONSerialization.jsonObject(with: decodedData) as? [String: Any])
     #expect(decoded["n"] as? Int == 42)
+  }
+}
+
+private func miniMaxM2ReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .reasoningDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func miniMaxM2OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func miniMaxM2ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
   }
 }

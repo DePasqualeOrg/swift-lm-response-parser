@@ -246,6 +246,73 @@ struct MistralStreamingTests {
       #expect(parsed?["unit"] as? String == "celsius", "interval=\(interval)")
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact text and argument deltas`() {
+    let chunks = [
+      "prefix ",
+      "[TOOL",
+      #"_CALLS]fn[ARGS]{"x":"#,
+      "1",
+      "}",
+      "suffix",
+    ]
+
+    var parser = MistralParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(mistralOutputTextDeltas(from: events) == ["prefix ", "suffix"])
+    #expect(mistralArgumentDeltas(from: events) == [#"{"x":1}"#])
+  }
+
+  @Test
+  func `Completed compact call followed by later compact call preserves exact deltas`() {
+    let chunks = [
+      "[TOOL_CALLS]first[ARGS]{}",
+      #"[TOOL_CALLS]second[ARGS]{"y":2}"#,
+    ]
+
+    var parser = MistralParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1])
+    #expect(mistralArgumentDeltas(from: events) == ["{}", #"{"y":2}"#])
+  }
+}
+
+private func mistralOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func mistralArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
 }
 
 @Suite("MistralParser — finalize edge cases")

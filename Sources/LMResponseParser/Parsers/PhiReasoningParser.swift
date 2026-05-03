@@ -30,6 +30,8 @@ struct PhiReasoningParser: ResponseFormatParser {
   private static let thinkStart = "<think>"
   private static let thinkEnd = "</think>"
 
+  /// Active parsing window. Completed prefixes are removed after each scan so
+  /// long reasoning blocks do not keep being rescanned.
   private var buffer: String = ""
 
   private enum Phase { case reasoning, normal }
@@ -38,6 +40,11 @@ struct PhiReasoningParser: ResponseFormatParser {
   /// In reasoning phase: index in `buffer` of the next character to
   /// classify as reasoning text. Advances past a leading `<think>`.
   private var sentReasoningIdx: Int = 0
+
+  /// Tracks whether the optional leading `<think>` in reasoning phase has
+  /// already been handled. This remains true across buffer pruning so a
+  /// literal `<think>` later in reasoning is emitted as text.
+  private var reasoningStartResolved = false
 
   /// In normal phase: index in `buffer` of the next character to emit
   /// as message content. Set when reasoning ends to the position right
@@ -93,6 +100,8 @@ struct PhiReasoningParser: ResponseFormatParser {
   // MARK: Scan loop
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
+    defer { pruneConsumedPrefix() }
+
     var events: [ResponseStreamingEvent] = []
     // A single chunk may carry both a reasoning open and close, so
     // loop while the phase keeps changing.
@@ -109,6 +118,16 @@ struct PhiReasoningParser: ResponseFormatParser {
     return events
   }
 
+  private mutating func pruneConsumedPrefix() {
+    let consumedIdx = phase == .reasoning ? sentReasoningIdx : sentContentIdx
+    let dropCount = Swift.min(consumedIdx, buffer.count)
+    guard dropCount > 0 else { return }
+
+    buffer.removeFirst(dropCount)
+    sentReasoningIdx = Swift.max(0, sentReasoningIdx - dropCount)
+    sentContentIdx = Swift.max(0, sentContentIdx - dropCount)
+  }
+
   // MARK: Reasoning phase
 
   private mutating func scanReasoning(isEnd: Bool) -> [ResponseStreamingEvent] {
@@ -117,19 +136,25 @@ struct PhiReasoningParser: ResponseFormatParser {
     let thinkStartChars = Array(Self.thinkStart)
     let thinkEndChars = Array(Self.thinkEnd)
 
-    // Strip a leading `<think>` if the model emitted one.
-    if sentReasoningIdx == 0,
-       bufChars.count >= thinkStartChars.count,
-       Array(bufChars[0 ..< thinkStartChars.count]) == thinkStartChars
-    {
-      sentReasoningIdx = thinkStartChars.count
-    } else if sentReasoningIdx == 0, !isEnd {
-      // Could still grow into `<think>` – hold back any partial
-      // prefix so we don't accidentally emit `<thi` as reasoning
-      // text and then realize it was a marker.
-      let leadingOverlap = leadingPartialOverlap(of: bufChars, with: thinkStartChars)
-      if leadingOverlap > 0, leadingOverlap == bufChars.count {
-        return events
+    if !reasoningStartResolved {
+      // Strip a leading `<think>` if the model emitted one.
+      if sentReasoningIdx == 0,
+         bufChars.count >= thinkStartChars.count,
+         Array(bufChars[0 ..< thinkStartChars.count]) == thinkStartChars
+      {
+        sentReasoningIdx = thinkStartChars.count
+        reasoningStartResolved = true
+      } else if sentReasoningIdx == 0, !isEnd {
+        // Could still grow into `<think>` – hold back any partial
+        // prefix so we don't accidentally emit `<thi` as reasoning
+        // text and then realize it was a marker.
+        let leadingOverlap = leadingPartialOverlap(of: bufChars, with: thinkStartChars)
+        if leadingOverlap > 0, leadingOverlap == bufChars.count {
+          return events
+        }
+        reasoningStartResolved = true
+      } else {
+        reasoningStartResolved = true
       }
     }
 
@@ -247,6 +272,7 @@ struct PhiReasoningParser: ResponseFormatParser {
     if available >= thinkStartChars.count {
       if Array(bufChars[cursor ..< cursor + thinkStartChars.count]) == thinkStartChars {
         sentReasoningIdx = cursor + thinkStartChars.count
+        reasoningStartResolved = true
         phase = .reasoning
         return []
       }

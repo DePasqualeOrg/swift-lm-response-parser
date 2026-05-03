@@ -136,6 +136,7 @@ struct HarmonyParser: ResponseFormatParser {
   private static let assistantPrefix = "assistant"
   private static let postAssistantLabels = ["analysis", "commentary"]
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
   private var parsedIdx: Int = 0
   private var state: State = .idle
@@ -218,6 +219,7 @@ struct HarmonyParser: ResponseFormatParser {
         break
       }
     }
+    pruneConsumedPrefix()
     return events
   }
 
@@ -1138,6 +1140,17 @@ struct HarmonyParser: ResponseFormatParser {
       if overlap > best { best = overlap }
     }
     return best
+  }
+
+  /// Drop bytes the state machine has already consumed. Any active payload
+  /// state is stored separately in `openMessage`, `openReasoning`, or
+  /// `openFunctionCall`; bytes that must remain for marker recognition,
+  /// commentary-filler detection, or tool-argument whitespace handling are
+  /// deliberately left at or after `parsedIdx`.
+  private mutating func pruneConsumedPrefix() {
+    guard parsedIdx > 0 else { return }
+    buffer.removeFirst(parsedIdx)
+    parsedIdx = 0
   }
 
   // MARK: Item open/close

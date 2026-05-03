@@ -33,6 +33,7 @@ struct MistralParser: ResponseFormatParser {
   private static let thinkStart = "[THINK]"
   private static let thinkEnd = "[/THINK]"
 
+  /// Active suffix that has not yet been proven safe to discard.
   private var buffer: String = ""
   private var parsedIdx: Int = 0
 
@@ -306,6 +307,8 @@ struct MistralParser: ResponseFormatParser {
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
+    defer { pruneConsumedPrefix() }
+
     // Loop while progress is made: each iteration either emits content
     // up to the next marker, or consumes one tool call. When neither
     // is possible (waiting for more bytes), the loop exits.
@@ -323,6 +326,15 @@ struct MistralParser: ResponseFormatParser {
       }
     }
     return events
+  }
+
+  private mutating func pruneConsumedPrefix() {
+    guard parsedIdx > 0 else { return }
+
+    let dropCount = min(parsedIdx, buffer.count)
+    buffer.removeFirst(dropCount)
+    parsedIdx = 0
+    toolCalls.removeAll(keepingCapacity: true)
   }
 
   private mutating func emitContentUpToMarker(isEnd: Bool) -> [ResponseStreamingEvent] {

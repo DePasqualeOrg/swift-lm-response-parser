@@ -86,6 +86,35 @@ struct PhiReasoningBasicTests {
 @Suite("PhiReasoningParser — streaming")
 struct PhiReasoningStreamingTests {
   @Test
+  func `Fixed chunks preserve exact reasoning and text deltas`() {
+    var parser = PhiReasoningParser()
+    let chunks = ["<thi", "nk>plan ", "more", "</thi", "nk>answer ", "done"]
+    var events: [ResponseStreamingEvent] = []
+
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(phiReasoningDeltas(from: events) == ["plan ", "more"])
+    #expect(phiOutputTextDeltas(from: events) == ["answer ", "done"])
+  }
+
+  @Test
+  func `Literal think marker inside ongoing reasoning is preserved across chunks`() {
+    var parser = PhiReasoningParser()
+    let chunks = ["<think>", "outer ", "<think>", " inner", "</think>"]
+    var events: [ResponseStreamingEvent] = []
+
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(phiReasoningDeltas(from: events) == ["outer ", "<think>", " inner"])
+  }
+
+  @Test
   func `Char-by-char reconstruction matches one-shot`() {
     let input = "<think>Step 1: identify. Step 2: compute.</think>The answer is 42."
 
@@ -149,6 +178,20 @@ struct PhiReasoningStreamingTests {
       Issue.record("Expected reasoning"); return
     }
     #expect(rt.text == "thinking")
+  }
+}
+
+private func phiReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    guard case let .reasoningDelta(delta) = event else { return nil }
+    return delta.delta
+  }
+}
+
+private func phiOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    guard case let .outputTextDelta(delta) = event else { return nil }
+    return delta.delta
   }
 }
 

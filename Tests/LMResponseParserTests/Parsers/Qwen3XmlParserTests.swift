@@ -564,6 +564,82 @@ struct Qwen3XmlStreamingBoundaryTests {
       #expect(parsed?["unit"] as? String == "celsius", "interval=\(interval)")
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact reasoning text and argument deltas`() {
+    let chunks = [
+      "<think>plan ",
+      "more</think>",
+      "Answer ",
+      "<tool_call>\n<function=fn>\n",
+      "<parameter=x>",
+      "1",
+      "</parameter>\n</function>\n</tool_call>",
+      " tail",
+    ]
+
+    var parser = Qwen3XmlParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2, 3])
+    #expect(qwen3XmlReasoningDeltas(from: events) == ["plan ", "more"])
+    #expect(qwen3XmlOutputTextDeltas(from: events) == ["Answer ", " tail"])
+    #expect(qwen3XmlArgumentDeltas(from: events) == ["{\"x\": \"1\"", "}"])
+  }
+
+  @Test
+  func `Think tags after a closed tool call stay normal content`() {
+    let chunks = [
+      "<tool_call>\n<function=fn>\n<parameter=x>1</parameter>\n</function>\n</tool_call>",
+      "<think>after</think>",
+    ]
+    var parser = Qwen3XmlParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let items = accumulateItems(from: events)
+    #expect(items.count == 2)
+    guard case .functionCall = items[0],
+          case let .message(message) = items[1],
+          case let .outputText(text) = message.content[0]
+    else {
+      Issue.record("Expected tool call then message")
+      return
+    }
+    #expect(text.text == "<think>after</think>")
+  }
+}
+
+private func qwen3XmlReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .reasoningDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func qwen3XmlOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func qwen3XmlArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
+  }
 }
 
 @Suite("Qwen3XmlParser — finalize edge cases")

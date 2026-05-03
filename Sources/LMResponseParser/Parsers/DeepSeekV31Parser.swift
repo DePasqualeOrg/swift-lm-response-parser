@@ -38,6 +38,7 @@ struct DeepSeekV31Parser: ResponseFormatParser {
   private static let toolCallEnd = "<｜tool▁call▁end｜>"
   private static let toolSep = "<｜tool▁sep｜>"
 
+  /// Active suffix that has not yet been proven safe to discard.
   private var buffer: String = ""
   private var parsedIdx: Int = 0
 
@@ -136,6 +137,8 @@ struct DeepSeekV31Parser: ResponseFormatParser {
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
+    defer { pruneConsumedPrefix() }
+
     events.append(contentsOf: emitNormalText(isEnd: isEnd))
 
     while parsedIdx < buffer.count {
@@ -213,6 +216,17 @@ struct DeepSeekV31Parser: ResponseFormatParser {
       break
     }
     return events
+  }
+
+  private mutating func pruneConsumedPrefix() {
+    guard parsedIdx > 0 else { return }
+
+    buffer.removeFirst(parsedIdx)
+    parsedIdx = 0
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
   }
 
   private mutating func parseFunctionHeader(

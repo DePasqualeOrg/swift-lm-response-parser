@@ -271,6 +271,62 @@ struct Granite20bFcStreamingTests {
     let decoded = try #require(JSONSerialization.jsonObject(with: decodedData) as? [String: Any])
     #expect(decoded["city"] as? String == "Paris")
   }
+
+  @Test
+  func `Fixed chunks preserve exact text and argument deltas`() {
+    let chunks = [
+      "Lead ",
+      "<function_call> ",
+      #"{"name":"first","arguments":{"x":1}}"#,
+      "\n",
+      #"<function_call> {"name":"second","arguments":{"y":"#,
+      "2",
+      "}} ignored",
+    ]
+
+    var parser = Granite20bFcParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2])
+    #expect(granite20bOutputTextDeltas(from: events) == ["Lead "])
+    #expect(granite20bArgumentDeltas(from: events) == [#"{"x":1}"#, #"{"y":2}"#])
+  }
+
+  @Test
+  func `Content emitted before split marker still detects tool call`() {
+    var parser = Granite20bFcParser()
+    var events = parser.process(ParserInput(text: "Before "))
+    events += parser.process(ParserInput(text: "<function_"))
+    events += parser.process(ParserInput(text: #"call> {"name":"fn","arguments":{}}"#))
+    events += parser.finalize()
+
+    #expect(granite20bOutputTextDeltas(from: events) == ["Before "])
+    #expect(granite20bArgumentDeltas(from: events) == ["{}"])
+    let items = accumulateItems(from: events)
+    #expect(items.count == 2)
+  }
+}
+
+private func granite20bOutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func granite20bArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
+  }
 }
 
 @Suite("Granite20bFcParser — format dispatch")

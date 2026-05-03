@@ -47,10 +47,22 @@ struct QwenParser: ResponseFormatParser {
   private static let toolCallStart = "<tool_call>"
   private static let toolCallEnd = "</tool_call>"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   private enum Phase { case reasoning, normal }
   private var phase: Phase
+
+  /// Whether the beginning of the current reasoning block has already been
+  /// checked for an optional model-emitted `<think>` marker. Kept separate
+  /// from `sentReasoningIdx` so buffer pruning can rebase the cursor to zero
+  /// without making a later literal `<think>` look like a fresh opener.
+  private var reasoningStartResolved: Bool = false
+
+  /// True until the normal phase emits content or sees a tool-call region.
+  /// Closed tool-call slots used to preserve this "start of normal output"
+  /// fact implicitly; pruning removes those slots, so keep the fact directly.
+  private var normalPhaseCanStartReasoning: Bool = true
 
   /// In reasoning phase: index in `buffer` of the next character to
   /// classify as reasoning text. Advances past the leading `<think>`
@@ -156,6 +168,7 @@ struct QwenParser: ResponseFormatParser {
       }
     }
 
+    pruneConsumedPrefix()
     return events
   }
 
@@ -173,19 +186,26 @@ struct QwenParser: ResponseFormatParser {
     let toolStartChars = Array(QwenParser.toolCallStart)
 
     // Strip a leading `<think>` if the model emitted one (older Qwen 3
-    // templates). Only valid before any reasoning text has been emitted.
-    if sentReasoningIdx == 0,
-       bufChars.count >= thinkStartChars.count,
-       Array(bufChars[0 ..< thinkStartChars.count]) == thinkStartChars
-    {
-      sentReasoningIdx = thinkStartChars.count
-    } else if sentReasoningIdx == 0, !isEnd {
-      // Buffer might still grow into a leading `<think>` – hold back
-      // any partial prefix so we don't accidentally emit `<thi` as
-      // reasoning text and then realize it was a marker.
-      let leadingOverlap = leadingPartialOverlap(of: bufChars, with: thinkStartChars)
-      if leadingOverlap > 0, leadingOverlap == bufChars.count {
-        return (events, false)
+    // templates). Resolve this once per reasoning block; after pruning,
+    // `sentReasoningIdx` may be zero again while reasoning is still open.
+    if !reasoningStartResolved {
+      if sentReasoningIdx == 0,
+         bufChars.count >= thinkStartChars.count,
+         Array(bufChars[0 ..< thinkStartChars.count]) == thinkStartChars
+      {
+        sentReasoningIdx = thinkStartChars.count
+        reasoningStartResolved = true
+      } else if sentReasoningIdx == 0, !isEnd {
+        // Buffer might still grow into a leading `<think>` – hold back
+        // any partial prefix so we don't accidentally emit `<thi` as
+        // reasoning text and then realize it was a marker.
+        let leadingOverlap = leadingPartialOverlap(of: bufChars, with: thinkStartChars)
+        if leadingOverlap > 0, leadingOverlap == bufChars.count {
+          return (events, false)
+        }
+        reasoningStartResolved = true
+      } else {
+        reasoningStartResolved = true
       }
     }
 
@@ -258,6 +278,7 @@ struct QwenParser: ResponseFormatParser {
     }
     toolRegionScanIdx = sentContentIdx
     events.append(contentsOf: closeReasoning(status: .completed))
+    reasoningStartResolved = false
     phase = .normal
     return (events, true)
   }
@@ -290,7 +311,7 @@ struct QwenParser: ResponseFormatParser {
     // back to reasoning phase. (Only honored at the very start of
     // normal-phase scanning – once content or a tool has been emitted,
     // a stray `<think>` would just be content.)
-    if openMessage == nil, openReasoning == nil, toolCalls.isEmpty {
+    if normalPhaseCanStartReasoning, openMessage == nil, openReasoning == nil {
       if let transitionEvents = transitionToReasoningIfMarkerPresent(isEnd: isEnd) {
         return transitionEvents
       }
@@ -300,6 +321,9 @@ struct QwenParser: ResponseFormatParser {
     // consecutive `<tool_call>...</tool_call>` blocks in the same chunk
     // – and once more after the loop for trailing text.
     let regions = extractToolCallRegions()
+    if !regions.isEmpty {
+      normalPhaseCanStartReasoning = false
+    }
     for (index, region) in regions.enumerated() {
       events.append(contentsOf: flushContent(isEnd: isEnd))
       if index >= toolCalls.count {
@@ -332,6 +356,7 @@ struct QwenParser: ResponseFormatParser {
       // Enough buffer to decide.
       if Array(bufChars[cursor ..< cursor + thinkStartChars.count]) == thinkStartChars {
         sentReasoningIdx = cursor + thinkStartChars.count
+        reasoningStartResolved = true
         phase = .reasoning
         return []
       }
@@ -385,6 +410,7 @@ struct QwenParser: ResponseFormatParser {
 
     var chunk = String(bufChars[sentContentIdx ..< sendableEnd])
     sentContentIdx = sendableEnd
+    normalPhaseCanStartReasoning = false
     // Strip any stray `</tool_call>` literal that landed in plain
     // content. The cursor-advance in `processRegion` already skips
     // past close tags that legitimately follow open tags; this
@@ -427,6 +453,7 @@ struct QwenParser: ResponseFormatParser {
   private struct ToolCallRegion {
     var jsonText: String
     var isComplete: Bool
+    var endIdxAfterClose: String.Index?
   }
 
   private func extractToolCallRegions() -> [ToolCallRegion] {
@@ -446,6 +473,7 @@ struct QwenParser: ResponseFormatParser {
         results.append(ToolCallRegion(
           jsonText: inner.trimmingCharacters(in: .whitespacesAndNewlines),
           isComplete: true,
+          endIdxAfterClose: endRange.upperBound,
         ))
         pos = endRange.upperBound
       } else {
@@ -457,7 +485,11 @@ struct QwenParser: ResponseFormatParser {
         }
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let complete = !trimmed.isEmpty && isValidJSON(trimmed)
-        results.append(ToolCallRegion(jsonText: trimmed, isComplete: complete))
+        results.append(ToolCallRegion(
+          jsonText: trimmed,
+          isComplete: complete,
+          endIdxAfterClose: nil,
+        ))
         break
       }
     }
@@ -514,12 +546,12 @@ struct QwenParser: ResponseFormatParser {
 
     toolCalls[index] = call
 
-    let regionClosed = bufferContainsClosingTag(forRegionAt: index)
+    let regionClosed = region.endIdxAfterClose != nil
     if !call.closed, regionClosed || (isEnd && region.isComplete) {
       events.append(contentsOf: closeToolCall(at: index, status: .completed))
       // Advance past `</tool_call>` so trailing content emits as a
       // fresh message on the next scan.
-      if let endIdx = endOfToolCallRegion(at: index) {
+      if let endIdx = region.endIdxAfterClose {
         let endOffset = buffer.distance(from: buffer.startIndex, to: endIdx)
         if endOffset > sentContentIdx {
           sentContentIdx = endOffset
@@ -530,42 +562,44 @@ struct QwenParser: ResponseFormatParser {
     return events
   }
 
-  private func bufferContainsClosingTag(forRegionAt index: Int) -> Bool {
-    guard let scanStart = buffer.index(buffer.startIndex, offsetBy: toolRegionScanIdx, limitedBy: buffer.endIndex) else {
-      return false
+  /// Drop any buffer prefix that the scan has already emitted as reasoning,
+  /// emitted as normal content, or consumed as closed tool-call structure.
+  /// Active tool-call regions and marker holdback bytes stay in the buffer
+  /// so later chunks can be diffed against existing parser state.
+  private mutating func pruneConsumedPrefix() {
+    let dropCount: Int = switch phase {
+      case .reasoning:
+        sentReasoningIdx
+      case .normal:
+        sentContentIdx
     }
-    var pos = scanStart
-    var seen = -1
-    while let startRange = buffer.range(of: QwenParser.toolCallStart, range: pos ..< buffer.endIndex) {
-      seen += 1
-      let afterStart = startRange.upperBound
-      if let endRange = buffer.range(of: QwenParser.toolCallEnd, range: afterStart ..< buffer.endIndex) {
-        if seen == index { return true }
-        pos = endRange.upperBound
-      } else {
-        return false
+    guard dropCount > 0 else { return }
+
+    let regions = extractToolCallRegions()
+    var completedRegionsToDrop = 0
+    for (index, region) in regions.enumerated() {
+      guard index < toolCalls.count,
+            let endIdx = region.endIdxAfterClose
+      else {
+        break
       }
+      let endOffset = buffer.distance(from: buffer.startIndex, to: endIdx)
+      guard endOffset <= dropCount else { break }
+      completedRegionsToDrop += 1
     }
-    return false
+
+    if completedRegionsToDrop > 0 {
+      toolCalls.removeFirst(completedRegionsToDrop)
+    }
+
+    buffer.removeFirst(dropCount)
+    rebase(&sentReasoningIdx, dropping: dropCount)
+    rebase(&sentContentIdx, dropping: dropCount)
+    rebase(&toolRegionScanIdx, dropping: dropCount)
   }
 
-  private func endOfToolCallRegion(at index: Int) -> String.Index? {
-    guard let scanStart = buffer.index(buffer.startIndex, offsetBy: toolRegionScanIdx, limitedBy: buffer.endIndex) else {
-      return nil
-    }
-    var pos = scanStart
-    var seen = -1
-    while let startRange = buffer.range(of: QwenParser.toolCallStart, range: pos ..< buffer.endIndex) {
-      seen += 1
-      let afterStart = startRange.upperBound
-      if let endRange = buffer.range(of: QwenParser.toolCallEnd, range: afterStart ..< buffer.endIndex) {
-        if seen == index { return endRange.upperBound }
-        pos = endRange.upperBound
-      } else {
-        return nil
-      }
-    }
-    return nil
+  private func rebase(_ cursor: inout Int, dropping dropCount: Int) {
+    cursor = Swift.max(0, cursor - dropCount)
   }
 
   // MARK: Item open/close

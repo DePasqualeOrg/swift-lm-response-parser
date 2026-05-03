@@ -172,6 +172,61 @@ struct KimiK2BasicsTests {
   }
 
   @Test
+  func `Fixed chunks preserve exact text and argument deltas`() {
+    let chunks = [
+      "prefix ",
+      "<|tool",
+      "_calls_section_begin|><|tool_call_begin|>functions.fn:0<|tool_call_argument_begin|>",
+      #"{"x":"#,
+      "1",
+      "}",
+      "<|tool_call_end|><|tool_calls_section_end|>",
+      " suffix",
+    ]
+
+    var parser = KimiK2Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(kimiK2OutputTextDeltas(from: events) == ["prefix ", " suffix"])
+    #expect(kimiK2ArgumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+  }
+
+  @Test
+  func `Closed section followed by text and later section preserves exact deltas`() {
+    let chunks = [
+      "<|tool_calls_section_begin|><|tool_call_begin|>functions.first:0<|tool_call_argument_begin|>{}"
+        + "<|tool_call_end|><|tool_calls_section_end|>",
+      " gap ",
+      #"<|tool_calls_section_begin|><|tool_call_begin|>functions.second:1<|tool_call_argument_begin|>{"y":2}"#
+        + "<|tool_call_end|><|tool_calls_section_end|>",
+    ]
+
+    var parser = KimiK2Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(kimiK2OutputTextDeltas(from: events) == [" gap "])
+    #expect(kimiK2ArgumentDeltas(from: events) == ["{}", #"{"y":2}"#])
+  }
+
+  @Test
   func `Dispatch via ResponseFormat.kimiK2.makeParser`() {
     let parser = ResponseFormat.kimiK2.makeParser(tokenizer: StubTokenizer())
     var p = parser
@@ -184,6 +239,33 @@ struct KimiK2BasicsTests {
   func `Name prefix kimi-k2 routes to .kimiK2`() {
     let format = ResponseFormat.infer(modelName: "kimi-k2-instruct", modelType: "", modelConfig: [:])
     #expect(format == .kimiK2)
+  }
+}
+
+private func kimiK2OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func kimiK2ReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .reasoningDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func kimiK2ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
   }
 }
 
@@ -535,6 +617,47 @@ struct KimiK2ReasoningTests {
     } else {
       Issue.record("expected function call at index 1")
     }
+  }
+
+  @Test
+  func `Literal think marker inside ongoing reasoning is preserved across chunks`() {
+    let chunks = ["<think>", "outer ", "<think>", " inner", "</think>"]
+
+    var parser = KimiK2Parser(initialState: .reasoning)
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    #expect(kimiK2ReasoningDeltas(from: events) == ["outer ", "<think>", " inner"])
+  }
+
+  @Test
+  func `Implicit section terminator preserves exact reasoning and argument deltas`() {
+    let chunks = [
+      "reason ",
+      "prelude",
+      "<|tool",
+      "_calls_section_begin|><|tool_call_begin|>functions.f:0<|tool_call_argument_begin|>",
+      "{}",
+      "<|tool_call_end|><|tool_calls_section_end|>",
+    ]
+
+    var parser = KimiK2Parser(initialState: .reasoning)
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1])
+    #expect(kimiK2ReasoningDeltas(from: events) == ["reason ", "prelude"])
+    #expect(kimiK2ArgumentDeltas(from: events) == ["{}"])
   }
 }
 

@@ -58,10 +58,22 @@ struct Gemma4Parser: ResponseFormatParser {
   private static let toolCallEnd = "<tool_call|>"
   private static let stringDelim = #"<|"|>"#
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
 
   private enum Phase { case reasoning, normal }
   private var phase: Phase
+
+  /// Whether the beginning of the current reasoning block has already been
+  /// checked for the optional model-emitted `<|channel>thought` marker. Kept
+  /// separate from `sentReasoningIdx` so buffer pruning can rebase the cursor
+  /// to zero without making a later literal marker look like a fresh opener.
+  private var reasoningStartResolved: Bool = false
+
+  /// True until the normal phase emits content or sees a tool-call region.
+  /// Retained tool-call slots used to preserve this "start of normal output"
+  /// fact implicitly; pruning removes those slots, so keep the fact directly.
+  private var normalPhaseCanStartReasoning: Bool = true
 
   private var sentReasoningIdx: Int = 0
   private var sentContentIdx: Int = 0
@@ -139,6 +151,7 @@ struct Gemma4Parser: ResponseFormatParser {
           events.append(contentsOf: scanNormal(isEnd: isEnd))
       }
     }
+    pruneConsumedPrefix()
     return events
   }
 
@@ -151,28 +164,34 @@ struct Gemma4Parser: ResponseFormatParser {
     let endChars = Array(Gemma4Parser.thinkEnd)
     let toolStartChars = Array(Gemma4Parser.toolCallStart)
 
-    if sentReasoningIdx == 0,
-       bufChars.count >= startChars.count,
-       Array(bufChars[0 ..< startChars.count]) == startChars
-    {
-      // Want to also consume an optional trailing newline. If the buffer
-      // ends exactly at the marker, more data may still arrive – hold so
-      // we can swallow that newline atomically with the marker rather
-      // than emit it as the first byte of reasoning text.
-      let afterMarker = startChars.count
-      if afterMarker >= bufChars.count, !isEnd {
-        return events
-      }
-      var skip = afterMarker
-      while skip < bufChars.count, bufChars[skip] == " " || bufChars[skip] == "\t" {
-        skip += 1
-      }
-      if skip < bufChars.count, bufChars[skip] == "\n" { skip += 1 }
-      sentReasoningIdx = skip
-    } else if sentReasoningIdx == 0, !isEnd {
-      let leadingOverlap = leadingPartialOverlap(of: bufChars, with: startChars)
-      if leadingOverlap > 0, leadingOverlap == bufChars.count {
-        return events
+    if !reasoningStartResolved {
+      if sentReasoningIdx == 0,
+         bufChars.count >= startChars.count,
+         Array(bufChars[0 ..< startChars.count]) == startChars
+      {
+        // Want to also consume an optional trailing newline. If the buffer
+        // ends exactly at the marker, more data may still arrive – hold so
+        // we can swallow that newline atomically with the marker rather
+        // than emit it as the first byte of reasoning text.
+        let afterMarker = startChars.count
+        if afterMarker >= bufChars.count, !isEnd {
+          return events
+        }
+        var skip = afterMarker
+        while skip < bufChars.count, bufChars[skip] == " " || bufChars[skip] == "\t" {
+          skip += 1
+        }
+        if skip < bufChars.count, bufChars[skip] == "\n" { skip += 1 }
+        sentReasoningIdx = skip
+        reasoningStartResolved = true
+      } else if sentReasoningIdx == 0, !isEnd {
+        let leadingOverlap = leadingPartialOverlap(of: bufChars, with: startChars)
+        if leadingOverlap > 0, leadingOverlap == bufChars.count {
+          return events
+        }
+        reasoningStartResolved = true
+      } else {
+        reasoningStartResolved = true
       }
     }
 
@@ -235,6 +254,7 @@ struct Gemma4Parser: ResponseFormatParser {
         sentContentIdx = exitIdx
     }
     events.append(contentsOf: closeReasoning(status: .completed))
+    reasoningStartResolved = false
     phase = .normal
     return events
   }
@@ -259,7 +279,7 @@ struct Gemma4Parser: ResponseFormatParser {
   private mutating func scanNormal(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
 
-    if openMessage == nil, openReasoning == nil, toolCalls.isEmpty {
+    if normalPhaseCanStartReasoning, openMessage == nil, openReasoning == nil {
       if let transitionEvents = transitionToReasoningIfMarkerPresent(isEnd: isEnd) {
         return transitionEvents
       }
@@ -307,12 +327,16 @@ struct Gemma4Parser: ResponseFormatParser {
           id: IDFactory.make(.functionCall),
           callId: IDFactory.make(.callId),
         ))
+        normalPhaseCanStartReasoning = false
         activeToolCallIndex = index
       }
 
       events.append(contentsOf: processRegion(at: index, region: region, isEnd: isEnd))
 
       if region.isComplete, let regionEndOffset {
+        if toolCalls[index].name == nil {
+          toolCalls[index].closed = true
+        }
         sentContentIdx = regionEndOffset
         activeToolCallIndex = nil
         continue
@@ -343,6 +367,7 @@ struct Gemma4Parser: ResponseFormatParser {
         }
         if skip < bufChars.count, bufChars[skip] == "\n" { skip += 1 }
         sentReasoningIdx = skip
+        reasoningStartResolved = true
         phase = .reasoning
         return []
       }
@@ -376,6 +401,7 @@ struct Gemma4Parser: ResponseFormatParser {
     let chunk = String(bufChars[sentContentIdx ..< sendableEnd])
     sentContentIdx = sendableEnd
     if chunk.isEmpty { return [] }
+    normalPhaseCanStartReasoning = false
 
     var events: [ResponseStreamingEvent] = []
     if openMessage == nil {
@@ -398,6 +424,36 @@ struct Gemma4Parser: ResponseFormatParser {
   private struct ToolCallRegion {
     var rawInner: String
     var isComplete: Bool
+  }
+
+  /// Drop any buffer prefix that has already been emitted or structurally
+  /// consumed. Active tool-call regions remain in the buffer; completed slots
+  /// are removed after rebasing so later scans can keep using encounter order.
+  private mutating func pruneConsumedPrefix() {
+    let dropCount: Int = switch phase {
+      case .reasoning:
+        sentReasoningIdx
+      case .normal:
+        sentContentIdx
+    }
+    guard dropCount > 0 else { return }
+
+    buffer.removeFirst(dropCount)
+    rebase(&sentReasoningIdx, dropping: dropCount)
+    rebase(&sentContentIdx, dropping: dropCount)
+
+    var removedCount = 0
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+      removedCount += 1
+    }
+    if let active = activeToolCallIndex, removedCount > 0 {
+      activeToolCallIndex = active >= removedCount ? active - removedCount : nil
+    }
+  }
+
+  private func rebase(_ cursor: inout Int, dropping dropCount: Int) {
+    cursor = Swift.max(0, cursor - dropCount)
   }
 
   private mutating func processRegion(

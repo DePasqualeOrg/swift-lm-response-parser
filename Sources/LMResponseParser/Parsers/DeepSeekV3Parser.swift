@@ -42,6 +42,7 @@ struct DeepSeekV3Parser: ResponseFormatParser {
   private static let jsonFenceOpen = "```json\n"
   private static let jsonFenceClose = "\n```"
 
+  // Active accumulated output. Consumed prefixes are pruned after each scan.
   private var buffer: String = ""
   private var parsedIdx: Int = 0
 
@@ -143,6 +144,7 @@ struct DeepSeekV3Parser: ResponseFormatParser {
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
+    defer { pruneConsumedPrefix() }
     events.append(contentsOf: emitNormalText(isEnd: isEnd))
 
     while parsedIdx < buffer.count {
@@ -216,6 +218,20 @@ struct DeepSeekV3Parser: ResponseFormatParser {
       break
     }
     return events
+  }
+
+  /// Drop any buffer prefix that has already been emitted or structurally
+  /// consumed. Open tool-call state carries cumulative arguments, so only the
+  /// active suffix needed for split marker detection has to remain in `buffer`.
+  private mutating func pruneConsumedPrefix() {
+    guard parsedIdx > 0 else { return }
+
+    buffer.removeFirst(parsedIdx)
+    parsedIdx = 0
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
   }
 
   private mutating func parseFunctionHeader(

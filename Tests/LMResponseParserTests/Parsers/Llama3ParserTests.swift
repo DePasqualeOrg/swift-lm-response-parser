@@ -132,6 +132,73 @@ struct Llama3StreamingTests {
       }
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact text and argument deltas`() {
+    let chunks = [
+      "prefix ",
+      "<|python",
+      #"_tag|>{"name":"fn","arguments":{"x":"#,
+      "1",
+      "}}",
+      "suffix",
+    ]
+
+    var parser = Llama3Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(llama3OutputTextDeltas(from: events) == ["prefix ", "suffix"])
+    #expect(llama3ArgumentDeltas(from: events) == [#"{"x":1}"#])
+  }
+
+  @Test
+  func `Completed JSON object followed by later JSON object preserves exact deltas`() {
+    let chunks = [
+      #"<|python_tag|>{"name":"first","arguments":{}}; "#,
+      #"{"name":"second","arguments":{"y":2}}"#,
+    ]
+
+    var parser = Llama3Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1])
+    #expect(llama3ArgumentDeltas(from: events) == ["{}", #"{"y":2}"#])
+  }
+}
+
+private func llama3OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func llama3ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
 }
 
 @Suite("Llama3Parser — finalize edge cases")

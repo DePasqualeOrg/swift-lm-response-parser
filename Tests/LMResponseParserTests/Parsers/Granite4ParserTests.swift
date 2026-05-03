@@ -237,6 +237,36 @@ struct Granite4StreamingTests {
     #expect(combined == #"{"x":1}"#, "Expected only the canonical decoded args")
     #expect(!combined.contains("\\\""), "Escaped quotes from the wire form must not leak")
   }
+
+  @Test
+  func `Fixed chunks preserve canonical string-encoded argument delta`() {
+    let chunks = [
+      "Before ",
+      "<tool_call>",
+      #"{"name":"f","arguments":"{\"x\":"#,
+      #"1}"#,
+      #""}"#,
+      "</tool_call>",
+      " after",
+    ]
+    var parser = ResponseFormat.granite4.makeParser(tokenizer: StubTokenizer())
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let argsDeltas = events.compactMap {
+      if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+      return nil
+    }
+    let textDeltas = events.compactMap {
+      if case let .outputTextDelta(e) = $0 { return e.delta }
+      return nil
+    }
+    #expect(argsDeltas == [#"{"x":1}"#])
+    #expect(textDeltas == ["Before ", " after"])
+  }
 }
 
 @Suite("ResponseFormat dispatch — Granite 4")

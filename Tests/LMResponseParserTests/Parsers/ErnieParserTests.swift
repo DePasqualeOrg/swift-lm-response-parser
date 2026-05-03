@@ -287,6 +287,35 @@ struct ErnieStreamingTests {
     #expect(!allText.contains("<response>"))
     #expect(toolCalls.first?.name == "f")
   }
+
+  @Test
+  func `Fixed chunks preserve inner Hermes text and argument deltas`() {
+    let chunks = [
+      "<response>Intro ",
+      "<tool_call>",
+      #"{"name":"f","arguments":{"x":"#,
+      "1",
+      "}}</tool_call>",
+      " tail</response>",
+    ]
+    var parser = ErnieParser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let textDeltas = events.compactMap {
+      if case let .outputTextDelta(e) = $0 { return e.delta }
+      return nil
+    }
+    let argsDeltas = events.compactMap {
+      if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+      return nil
+    }
+    #expect(textDeltas == ["Intro ", " tail"])
+    #expect(argsDeltas == [#"{"x":"#, "1", "}"])
+  }
 }
 
 @Suite("ErnieParser — format dispatch")

@@ -326,6 +326,96 @@ struct DeepSeekR1StreamingTests {
       }
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact reasoning text and argument deltas`() {
+    let chunks = [
+      "<think>plan ",
+      "more</think>",
+      "Answer ",
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>fn\n```json\n",
+      #"{"x":"#,
+      "1",
+      "}",
+      "\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+      " tail",
+    ]
+
+    var parser = DeepSeekR1Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let addedIndexes: [Int] = events.compactMap {
+      if case let .outputItemAdded(e) = $0 { return e.outputIndex }
+      return nil
+    }
+    #expect(addedIndexes == [0, 1, 2, 3])
+    #expect(deepSeekR1ReasoningDeltas(from: events) == ["plan ", "more"])
+    #expect(deepSeekR1OutputTextDeltas(from: events) == ["Answer ", " tail"])
+    #expect(deepSeekR1ArgumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+  }
+
+  @Test
+  func `Literal think marker inside ongoing reasoning is preserved across chunks`() {
+    var parser = DeepSeekR1Parser()
+    var events = parser.process(ParserInput(text: "first "))
+    events += parser.process(ParserInput(text: "<think>literal</think>after"))
+    events += parser.finalize()
+
+    #expect(deepSeekR1ReasoningDeltas(from: events) == ["first ", "<think>literal"])
+    #expect(deepSeekR1OutputTextDeltas(from: events) == ["after"])
+  }
+
+  @Test
+  func `Think tags after a closed tool call stay normal content`() {
+    let chunks = [
+      "<think>r</think>",
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>function<｜tool▁sep｜>fn\n```json\n{}\n```<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+      "<think>after</think>",
+    ]
+    var parser = DeepSeekR1Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let items = accumulateItems(from: events)
+    #expect(items.count == 3)
+    guard case .reasoning = items[0],
+          case .functionCall = items[1],
+          case let .message(message) = items[2],
+          case let .outputText(text) = message.content[0]
+    else {
+      Issue.record("Expected reasoning, tool call, then message")
+      return
+    }
+    #expect(text.text == "<think>after</think>")
+  }
+}
+
+private func deepSeekR1ReasoningDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .reasoningDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func deepSeekR1OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .outputTextDelta(e) = $0 { return e.delta }
+    return nil
+  }
+}
+
+private func deepSeekR1ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap {
+    if case let .functionCallArgumentsDelta(e) = $0 { return e.delta }
+    return nil
+  }
 }
 
 @Suite("DeepSeekR1Parser — finalize edge cases")

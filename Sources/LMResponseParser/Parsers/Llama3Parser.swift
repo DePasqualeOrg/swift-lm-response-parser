@@ -30,6 +30,7 @@ struct Llama3Parser: ResponseFormatParser {
   private static let pythonTag = "<|python_tag|>"
   private static let pythonTagChars = Array(pythonTag)
 
+  /// Active suffix that has not yet been proven safe to discard.
   private var buffer: String = ""
   private var parsedIdx: Int = 0
   /// Once we've consumed the python-tag marker (or decided the buffer
@@ -70,6 +71,7 @@ struct Llama3Parser: ResponseFormatParser {
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
+    defer { pruneConsumedPrefix() }
 
     // Detect entry into JSON mode if not already there.
     if jsonModeStartIdx == nil {
@@ -115,6 +117,18 @@ struct Llama3Parser: ResponseFormatParser {
     }
 
     return events
+  }
+
+  private mutating func pruneConsumedPrefix() {
+    guard parsedIdx > 0 else { return }
+
+    let dropCount = min(parsedIdx, buffer.count)
+    buffer.removeFirst(dropCount)
+    parsedIdx = 0
+
+    if let start = jsonModeStartIdx {
+      jsonModeStartIdx = max(0, start - dropCount)
+    }
   }
 
   private func firstNonWhitespaceCharacter() -> (character: Character, index: Int)? {

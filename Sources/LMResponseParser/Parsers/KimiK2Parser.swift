@@ -45,6 +45,7 @@ struct KimiK2Parser: ResponseFormatParser {
   private static let thinkStart = "<think>"
   private static let thinkEnd = "</think>"
 
+  /// Active suffix that has not yet been proven safe to discard.
   private var buffer: String = ""
   private var parsedIdx: Int = 0
 
@@ -120,6 +121,8 @@ struct KimiK2Parser: ResponseFormatParser {
 
   private mutating func scan(isEnd: Bool) -> [ResponseStreamingEvent] {
     var events: [ResponseStreamingEvent] = []
+    defer { pruneConsumedPrefix() }
+
     if phase == .reasoning {
       events.append(contentsOf: scanReasoning(isEnd: isEnd))
       if phase == .reasoning { return events }
@@ -196,6 +199,17 @@ struct KimiK2Parser: ResponseFormatParser {
       break
     }
     return events
+  }
+
+  private mutating func pruneConsumedPrefix() {
+    guard parsedIdx > 0 else { return }
+
+    buffer.removeFirst(parsedIdx)
+    parsedIdx = 0
+
+    while let first = toolCalls.first, first.closed {
+      toolCalls.removeFirst()
+    }
   }
 
   /// Reasoning phase scan. Emits reasoning deltas until either

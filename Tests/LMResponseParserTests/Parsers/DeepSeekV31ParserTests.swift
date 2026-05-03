@@ -108,6 +108,79 @@ struct DeepSeekV31StreamingTests {
       }
     }
   }
+
+  @Test
+  func `Fixed chunks preserve exact text and argument deltas`() {
+    let chunks = [
+      "prefix ",
+      "<｜tool",
+      "▁calls▁begin｜><｜tool▁call▁begin｜>fn<｜tool▁sep｜>",
+      #"{"x":"#,
+      "1",
+      "}",
+      "<｜tool▁call▁end｜><｜tool▁calls▁end｜>",
+      " suffix",
+    ]
+
+    var parser = DeepSeekV31Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(deepSeekV31OutputTextDeltas(from: events) == ["prefix ", " suffix"])
+    #expect(deepSeekV31ArgumentDeltas(from: events) == [#"{"x":"#, "1", "}"])
+  }
+
+  @Test
+  func `Closed call followed by text and later call preserves exact deltas`() {
+    let chunks = [
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>first<｜tool▁sep｜>{}<｜tool▁call▁end｜>"
+        + "<｜tool▁calls▁end｜>",
+      " gap ",
+      "<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>second<｜tool▁sep｜>{\"y\":2}<｜tool▁call▁end｜>"
+        + "<｜tool▁calls▁end｜>",
+    ]
+
+    var parser = DeepSeekV31Parser()
+    var events: [ResponseStreamingEvent] = []
+    for chunk in chunks {
+      events += parser.process(ParserInput(text: chunk))
+    }
+    events += parser.finalize()
+
+    let outputIndexes = events.compactMap { event -> Int? in
+      if case let .outputItemAdded(e) = event { return e.outputIndex }
+      return nil
+    }
+    #expect(outputIndexes == [0, 1, 2])
+    #expect(deepSeekV31OutputTextDeltas(from: events) == [" gap "])
+    #expect(deepSeekV31ArgumentDeltas(from: events) == ["{}", #"{"y":2}"#])
+  }
+}
+
+private func deepSeekV31OutputTextDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .outputTextDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
+}
+
+private func deepSeekV31ArgumentDeltas(from events: [ResponseStreamingEvent]) -> [String] {
+  events.compactMap { event in
+    if case let .functionCallArgumentsDelta(e) = event {
+      return e.delta
+    }
+    return nil
+  }
 }
 
 @Suite("DeepSeekV31Parser — finalize and dispatch")
