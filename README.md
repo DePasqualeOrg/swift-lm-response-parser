@@ -1,19 +1,15 @@
 # Swift LM Response Parser
 
+[![Swift Version Compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FDePasqualeOrg%2Fswift-lm-response-parser%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser) [![Platform Compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FDePasqualeOrg%2Fswift-lm-response-parser%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser)
+
 > Note: This library is in early development. Expect breaking changes.
 
 Swift LM Response Parser turns language model output into [Open Responses](https://www.openresponses.org/) streaming events.
 
-The package includes two library products:
-
-- **`LMResponseParser`**: the engine-agnostic parser core
-- **`LMResponseParserMLX`**: a bridge to [MLX Swift LM](https://github.com/ml-explore/mlx-swift-lm) that turns `ModelContext` token-streaming into Responses-shaped events
-
-## Documentation
-
-- Tokenizer conformance, output items, and one-shot parsing – see the [Getting Started](Sources/LMResponseParser/Documentation.docc/articles/getting-started.md) article.
-- Driving the streaming loop directly with `ResponseStream` – see the [Streaming](Sources/LMResponseParser/Documentation.docc/articles/streaming.md) article.
-- High-level MLX chat sessions and lower-level helpers – see the [MLX Integration](Sources/LMResponseParserMLX/Documentation.docc/articles/mlx-session.md) article.
+- [Documentation](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparser)
+- [Getting Started](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparser/getting-started)
+- [Streaming](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparser/streaming)
+- [MLX Integration](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparsermlx/mlx-session)
 
 ## Installation
 
