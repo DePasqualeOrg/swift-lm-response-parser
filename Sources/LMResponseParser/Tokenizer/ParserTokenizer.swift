@@ -19,24 +19,15 @@ import Foundation
 /// that ship their own tokenizer type can write a similarly trivial
 /// conformance against whatever surface they expose.
 ///
-/// **What's actually used.** Only ``decode(tokenIds:skipSpecialTokens:)``
-/// is read by the shipped code path: the package-level streaming
-/// detokenizer calls it per token to do the U+FFFD-based UTF-8 boundary
-/// withholding. None of the shipped parsers call ``convertTokenToId(_:)``
-/// or ``encode(text:addSpecialTokens:)``; every per-format parser matches
-/// markers on detokenized text. The two other methods remain on the
-/// protocol because (a) the empty-extension conformance to
-/// `swift-tokenizers.Tokenizer` requires them, and (b) they're the seam
-/// for a future per-parser switch to token-ID matching, where the
-/// package-level `ParserInput.tokenIds` field comes into play.
+/// The surface covers both sides of the parser boundary:
+/// ``decode(tokenIds:skipSpecialTokens:)`` supports token-loop detokenization,
+/// while ``convertTokenToId(_:)`` and ``encode(text:addSpecialTokens:)`` let
+/// parsers resolve structural markers against the tokenizer vocabulary.
 public protocol ParserTokenizer: Sendable {
   /// Look up the integer ID of a single token string. Returns nil when
   /// the token is not in the vocabulary.
   ///
-  /// Not currently consumed by any shipped parser; preserved for future
-  /// parsers that key off single reserved-token IDs (e.g., a Harmony
-  /// variant that needs to disambiguate the structural tokens from
-  /// regular text).
+  /// Parsers can use this to recognize single-token structural markers.
   func convertTokenToId(_ token: String) -> Int?
 
   /// Encode a piece of text into a token-ID sequence. When
@@ -44,9 +35,7 @@ public protocol ParserTokenizer: Sendable {
   /// or system tokens; callers depend on the returned IDs being exactly
   /// the encoding of the input string.
   ///
-  /// Not currently consumed by any shipped parser; preserved for future
-  /// parsers that need to compare against multi-token marker sequences
-  /// (Gemma 4's `<|channel>thought` is the design-doc example).
+  /// Parsers can use this to compare against multi-token marker sequences.
   func encode(text: String, addSpecialTokens: Bool) -> [Int]
 
   /// Decode a token-ID sequence back to text. Consumed by the

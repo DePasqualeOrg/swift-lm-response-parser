@@ -78,6 +78,7 @@ The library is in early development. Planned changes include:
 
 - **Data-driven parser routing registry.** The current routing logic in `ResponseFormat.infer(...)` is hardcoded. A future revision will expose the routing rules as data so consumers can augment or override routing without forking, and so a deployed app can pick up support for newly released models without rebuilding.
 - **Custom parser registration.** The set of supported parsers is closed today – adding a new wire format requires modifying the library. A future revision will let consumers register their own parser implementations against the routing layer, so applications can support proprietary or experimental formats without forking.
+- **Token-ID-aware marker hardening.** The library was designed from the beginning with optional token-ID plumbing: `ParserInput` can carry aligned token IDs, `ResponseStream` and the MLX bridge already preserve them, and `ParserTokenizer` exposes marker-ID lookup. Current parsers intentionally use SGLang-style text matching, but a future revision can use token IDs for targeted formats where reserved marker strings need to be distinguished from ordinary text that decodes the same way.
 
 ## Acknowledgements
 

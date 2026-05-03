@@ -89,9 +89,8 @@ package final class ResponseStreamEmitter {
   }
 
   /// Feed a chunk of detokenized text through the parser. When supplied,
-  /// `tokenIds` must be the IDs whose detokenized form is exactly `text` –
-  /// the Harmony parser keys off reserved-token IDs and depends on this
-  /// alignment.
+  /// `tokenIds` must be the IDs whose detokenized form is exactly `text`.
+  /// Parsers may use that alignment for token-aware marker handling.
   package func process(text: String, tokenIds: [Int]? = nil) -> [ResponseStreamingEvent] {
     precondition(phase == .streaming, "ResponseStreamEmitter.process() called outside the streaming phase")
 

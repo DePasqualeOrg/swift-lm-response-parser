@@ -35,31 +35,12 @@ import Foundation
 /// header. This is a known malformed-output pattern; the parser filters it
 /// (across chunk boundaries when needed) so it never leaks into a message.
 ///
-/// **Marker matching: text-based.** Harmony's seven structural tokens
-/// are reserved special tokens whose decoded text is canonical and
-/// unambiguous (`<|start|>`, `<|channel|>`, …). The parser matches
-/// markers in the detokenized text rather than keying off token IDs.
-/// SGLang's `harmony_parser.py` takes the same approach. vLLM's
-/// `gptoss_reasoning_parser.py` keys off token IDs instead, but the
-/// motivations there (speculative decoding delivering many tokens per
-/// step, `skip_special_tokens=True` configurations stripping the
-/// structural tokens before they reach the parser, server-batch
-/// performance) don't apply at the parser-library layer.
-///
-/// The `ParserTokenizer` parameter at construction and the
-/// `ParserInput.tokenIds` field on every chunk are preserved on the
-/// protocol surface as forward-looking infrastructure – none of the
-/// shipped parsers read either. Switch over if any of these become
-/// real:
-///
-/// - A model that emits `<|channel|>` (or any other Harmony marker)
-///   as literal text via regular tokens rather than the reserved
-///   special token, in response to prompts that ask it to echo the
-///   string. Decoded text is identical; only token IDs differ.
-/// - A tokenizer that decodes the structural tokens to non-canonical
-///   text.
-/// - A consumer-side detokenizer that strips special tokens before
-///   `process(_:)` sees them.
+/// **Marker matching.** This parser matches Harmony markers in detokenized
+/// text. The parser boundary also carries enough information for a token-aware
+/// implementation: construction-time tokenizer access can resolve reserved
+/// marker IDs, and each ``ParserInput`` can carry the generated IDs aligned
+/// with its text. That allows the format to distinguish structural marker
+/// tokens from ordinary content tokens that decode to the same marker text.
 struct HarmonyParser: ResponseFormatParser {
   /// Initial parser phase. Default is ``idle`` (start fresh outside any
   /// block). Set to ``inReasoning`` when the parser should resume an
@@ -251,9 +232,9 @@ struct HarmonyParser: ResponseFormatParser {
   }
 
   /// Pick canonical vs text mode based on what's in the buffer past the
-  /// current parse cursor. If the input mixes both, canonical wins because
-  /// markers are unambiguous; text mode is only entered when no markers
-  /// are present and a leading text label is recognized. The decision
+  /// current parse cursor. If the input mixes both, canonical marker mode
+  /// wins; text mode is only entered when no markers are present and a
+  /// leading stripped-label form is recognized. The decision
   /// considers two ambiguities that must hold the buffer instead of
   /// committing: a partial Harmony marker at the suffix
   /// (e.g., `complete text <|ret`) and a partial text label at the

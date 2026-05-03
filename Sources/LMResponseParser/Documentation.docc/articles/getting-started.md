@@ -4,7 +4,7 @@ Configure a tokenizer, choose a response format, and start parsing.
 
 ## Overview
 
-`LMResponseParser` consumes a stream of token IDs from any inference engine and produces [Open Responses](https://www.openresponses.org/) streaming events plus an accumulated `[ResponseOutputItem]` snapshot. The parser is engine-agnostic; the only thing it needs from the host is a tokenizer that conforms to ``ParserTokenizer``.
+`LMResponseParser` parses detokenized model text, or consumes token IDs through ``ResponseStream`` and detokenizes them before parsing. It produces [Open Responses](https://www.openresponses.org/) streaming events plus an accumulated `[ResponseOutputItem]` snapshot. The parser is engine-agnostic; token-driven streaming only needs a tokenizer that conforms to ``ParserTokenizer``.
 
 For MLX Swift LM, the [`LMResponseParserMLX`](/documentation/lmresponseparsermlx) module wires this engine to `ModelContainer` and `ModelContext` so callers don't manage tokenization manually.
 

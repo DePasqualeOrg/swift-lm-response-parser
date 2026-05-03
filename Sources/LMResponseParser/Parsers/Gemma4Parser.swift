@@ -29,20 +29,11 @@ import Foundation
 /// as a single delta when the matching `}` (and trailing `<tool_call|>`)
 /// arrives. Truncation closes any open item with `incomplete` status.
 ///
-/// **Marker matching: text-based.** Both pieces of the start marker
-/// (`<|channel>` followed by `thought`) and the end marker
-/// (`<channel|>`) decode to canonical literal strings, so the parser
-/// scans the detokenized text for these markers. SGLang's
-/// `Gemma4Detector` in `reasoning_parser.py` takes the same approach.
-/// vLLM's `gemma4_reasoning_parser.py` keys off token IDs instead
-/// (looking up `<|channel>`, `<channel|>`, `<|tool_call>`, etc. via
-/// `self.vocab[...]` and walking `input_ids`), but the motivations
-/// there are speculative-decoding handling and `skip_special_tokens`
-/// robustness – neither applies at the parser-library layer.
-///
-/// The `ParserTokenizer` parameter and `ParserInput.tokenIds` field
-/// are preserved on the protocol surface as forward-looking
-/// infrastructure; this parser doesn't read either.
+/// **Marker matching.** This parser scans detokenized text for Gemma's channel
+/// and tool-call markers. The parser boundary also supports token-aware
+/// classification: construction-time tokenizer access can resolve Gemma's
+/// reserved marker IDs, and each ``ParserInput`` can carry the generated IDs
+/// aligned with its text.
 struct Gemma4Parser: ResponseFormatParser {
   /// Initial reasoning phase. Set to ``reasoning`` when the parser should
   /// start already inside a `<|channel>thought` block (typically because

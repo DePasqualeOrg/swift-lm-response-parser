@@ -4,7 +4,7 @@ Turn language model output into Open Responses streaming events.
 
 ## Overview
 
-`LMResponseParser` is the engine-agnostic core of the package. It takes a stream of token IDs from any inference engine, runs them through a per-format detector (Hermes, Harmony, Qwen, DeepSeek, and many others), and emits the streaming events and accumulated output items defined by the [Open Responses](https://www.openresponses.org/) shape.
+`LMResponseParser` is the engine-agnostic core of the package. It parses detokenized model text directly, or consumes token IDs through ``ResponseStream`` and detokenizes them before handing text plus aligned optional token metadata to a per-format detector (Hermes, Harmony, Qwen, DeepSeek, and many others). It emits the streaming events and accumulated output items defined by the [Open Responses](https://www.openresponses.org/) shape.
 
 The companion module [`LMResponseParserMLX`](/documentation/lmresponseparsermlx) wires this engine to MLX Swift LM, exposing a multi-turn chat session that yields Responses-shaped values directly.
 

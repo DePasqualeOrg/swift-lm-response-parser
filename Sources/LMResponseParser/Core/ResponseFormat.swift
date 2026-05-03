@@ -476,19 +476,10 @@ extension ResponseFormat {
 extension ResponseFormat {
   /// Construct a parser for this format.
   ///
-  /// The `tokenizer` argument is held by the protocol for API symmetry with
-  /// `swift-tokenizers.Tokenizer` and to give parsers a place to look up
-  /// special-token IDs at construction. In practice every per-format parser
-  /// matches markers on detokenized text – the same approach SGLang's
-  /// reference parsers take. The detokenized form of every marker we care
-  /// about is unique and unambiguous (Hermes' `<think>`, Gemma 4's
-  /// `<|channel>thought` / `<channel|>`, Harmony's seven `<|...|>` reserved
-  /// tokens, the CJK-bracketed DeepSeek tokens), so text matching is
-  /// equivalent to token-ID matching for these formats. The `tokenizer`
-  /// parameter remains in the API in case a future format genuinely
-  /// requires token-ID introspection (e.g., a model whose marker text
-  /// overlaps with regular content the way Harmony's design rationale
-  /// envisions).
+  /// The `tokenizer` argument gives parsers construction-time access to the
+  /// model vocabulary. Formats that need token-aware structure can resolve
+  /// reserved marker IDs or encode marker sequences once during construction;
+  /// formats that only need text can ignore it.
   ///
   /// `tools` is held for the parsers that need it for argument-type
   /// coercion: Qwen3-Xml, MiniMax M2, and GLM 4 read parameter types out of
