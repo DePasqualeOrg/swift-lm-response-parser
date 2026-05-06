@@ -36,10 +36,21 @@ public protocol ParserTokenizer: Sendable {
   /// the encoding of the input string.
   ///
   /// Parsers can use this to compare against multi-token marker sequences.
-  func encode(text: String, addSpecialTokens: Bool) -> [Int]
+  ///
+  /// Throws when the underlying tokenizer cannot encode the input
+  /// (malformed text, missing chat-template, FFI failure, etc.). The
+  /// concrete error type is up to the conforming type; the parser
+  /// surface keeps it untyped because conforming tokenizers come from
+  /// different ecosystems (swift-tokenizers' typed `TokenizerError`,
+  /// MLX's untyped errors) and we want to avoid a third typed error
+  /// hierarchy here.
+  func encode(text: String, addSpecialTokens: Bool) throws -> [Int]
 
   /// Decode a token-ID sequence back to text. Consumed by the
-  /// package-level streaming detokenizer for U+FFFD-based UTF-8
-  /// boundary withholding.
-  func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String
+  /// package-level streaming detokenizer.
+  ///
+  /// Throws when the underlying tokenizer rejects the IDs (negative or
+  /// out-of-range values, FFI failure, etc.). See ``encode(text:addSpecialTokens:)``
+  /// for why this surface stays untyped.
+  func decode(tokenIds: [Int], skipSpecialTokens: Bool) throws -> String
 }

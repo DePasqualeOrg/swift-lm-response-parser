@@ -16,12 +16,12 @@ private final class RecordingTokenizer: MLXLMCommon.Tokenizer, @unchecked Sendab
   let eosToken: String? = "<eos>"
   let unknownToken: String? = "<unk>"
 
-  func encode(text: String, addSpecialTokens: Bool) -> [Int] {
+  func encode(text: String, addSpecialTokens: Bool) throws -> [Int] {
     encodeCalls.append((text, addSpecialTokens))
     return text.utf8.map { Int($0) }
   }
 
-  func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
+  func decode(tokenIds: [Int], skipSpecialTokens: Bool) throws -> String {
     decodeCalls.append((tokenIds, skipSpecialTokens))
     return tokenIds.map { String($0) }.joined(separator: ",")
   }
@@ -56,11 +56,11 @@ struct MLXTokenizerAdapterTests {
   }
 
   @Test
-  func `encode forwards arguments verbatim`() {
+  func `encode forwards arguments verbatim`() throws {
     let underlying = RecordingTokenizer()
     let adapter = MLXTokenizerAdapter(underlying)
-    _ = adapter.encode(text: "abc", addSpecialTokens: false)
-    _ = adapter.encode(text: "abc", addSpecialTokens: true)
+    _ = try adapter.encode(text: "abc", addSpecialTokens: false)
+    _ = try adapter.encode(text: "abc", addSpecialTokens: true)
     #expect(underlying.encodeCalls.count == 2)
     #expect(underlying.encodeCalls[0].text == "abc")
     #expect(underlying.encodeCalls[0].addSpecialTokens == false)
@@ -68,11 +68,11 @@ struct MLXTokenizerAdapterTests {
   }
 
   @Test
-  func `decode forwards arguments verbatim`() {
+  func `decode forwards arguments verbatim`() throws {
     let underlying = RecordingTokenizer()
     let adapter = MLXTokenizerAdapter(underlying)
-    _ = adapter.decode(tokenIds: [1, 2, 3], skipSpecialTokens: true)
-    _ = adapter.decode(tokenIds: [4, 5], skipSpecialTokens: false)
+    _ = try adapter.decode(tokenIds: [1, 2, 3], skipSpecialTokens: true)
+    _ = try adapter.decode(tokenIds: [4, 5], skipSpecialTokens: false)
     #expect(underlying.decodeCalls.count == 2)
     #expect(underlying.decodeCalls[0].tokenIds == [1, 2, 3])
     #expect(underlying.decodeCalls[0].skipSpecialTokens == true)

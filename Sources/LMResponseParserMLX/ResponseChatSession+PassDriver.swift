@@ -50,7 +50,7 @@ func runOnePass<Element: Sendable>(
   // leaves a parser marker open at that suffix boundary, pass the prompt
   // tail through the same `priorOutput` contract used by continuation
   // streams.
-  let effectivePriorOutput = resolvedFormat.combinedPriorOutput(
+  let effectivePriorOutput = try resolvedFormat.combinedPriorOutput(
     fromPreparedPrompt: input,
     tokenizer: adapter,
     generatedPriorOutput: nil,

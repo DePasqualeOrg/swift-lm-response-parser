@@ -4,6 +4,7 @@ import Foundation
 import LMResponseParser
 import MLX
 import MLXLMCommon
+import os
 
 /// One detokenized chunk plus its underlying token IDs, or the terminal
 /// completion record for a single MLX generation pass.
@@ -11,7 +12,7 @@ import MLXLMCommon
 /// Internal to the bridge – consumers see ``ResponseStreamingEvent`` or
 /// ``ResponseOutputItem``, not raw token-level output.
 enum PassOutput {
-  /// One detokenized chunk produced by `NaiveStreamingDetokenizer`.
+  /// One detokenized chunk produced by `LMResponseParser.StreamingDetokenizer`.
   /// `tokenIds` are the IDs whose decoded form is exactly `text`.
   case chunk(text: String, tokenIds: [Int])
 
@@ -136,14 +137,12 @@ func runPass(
   let (outStream, continuation) = AsyncStream<PassOutput>.makeStream()
 
   let processor = Task { [dropIds, adapter] in
-    // Use the parser-library `NaiveStreamingDetokenizer` (which takes
-    // `ParserTokenizer`) rather than `MLXLMCommon`'s version. The
-    // parser-library detokenizer explicitly passes
-    // `skipSpecialTokens: false` and guards against negative diffs
-    // produced by HF post-processors (e.g., `Lstrip`/`Rstrip`
-    // re-applied once a following token is present), which would
-    // trap `String.suffix(_:)` in the MLXLMCommon variant.
-    var detokenizer = LMResponseParser.NaiveStreamingDetokenizer(tokenizer: adapter)
+    // Use the parser-library `StreamingDetokenizer` (which takes
+    // `ParserTokenizer`) rather than `MLXLMCommon`'s version, so the
+    // bridge sees the parser-local `StreamingDetokenizerError` for
+    // recovery and the parser layer stays decoupled from any
+    // particular tokenizer ecosystem.
+    var detokenizer = adapter.streamingDetokenizer()
     var pendingTokenIds: [Int] = []
 
     for await event in mlxStream {
@@ -152,9 +151,56 @@ func runPass(
           if dropIds.contains(id) {
             continue
           }
-          detokenizer.append(token: id)
           pendingTokenIds.append(id)
-          if let chunk = detokenizer.next() {
+
+          // vLLM-style recovery contract for the streaming detokenizer.
+          // `pendingTokenIds` tracks the token IDs whose bytes will
+          // appear in the next emitted chunk; each `consume` outcome
+          // demands a different mutation:
+          //
+          //   * Returns String  → cleared after emit.
+          //   * Returns nil     → token stays pending (bytes buffered
+          //                       in the detokenizer for a future chunk).
+          //   * Throws prefix invariant, retry succeeds → reset
+          //                       destroyed the detokenizer's buffered
+          //                       bytes; prior pending tokens' bytes
+          //                       are lost. Pin to [id] so the chunk's
+          //                       `tokenIds` align.
+          //   * Throws prefix invariant, retry also throws → reset
+          //                       already lost prior pendings; the
+          //                       failing token's bytes are
+          //                       unrecoverable. Clear fully.
+          //   * Throws other (decode pass-through) → transactional
+          //                       `consume` rolled back; detokenizer
+          //                       state unchanged. Drop just the
+          //                       failing token.
+          let chunk: String?
+          do {
+            chunk = try detokenizer.consume(id)
+          } catch let error as StreamingDetokenizerError {
+            runPassLogger.warning(
+              "Streaming prefix violated, resetting detokenizer: \(error.localizedDescription, privacy: .public)",
+            )
+            detokenizer = adapter.streamingDetokenizer()
+            do {
+              chunk = try detokenizer.consume(id)
+              pendingTokenIds = [id]
+            } catch {
+              runPassLogger.error(
+                "Detokenizer retry failed; dropping token \(id): \(error.localizedDescription, privacy: .public)",
+              )
+              pendingTokenIds.removeAll(keepingCapacity: true)
+              chunk = nil
+            }
+          } catch {
+            runPassLogger.error(
+              "Detokenizer failed; dropping token \(id): \(error.localizedDescription, privacy: .public)",
+            )
+            pendingTokenIds.removeLast()
+            chunk = nil
+          }
+
+          if let chunk {
             continuation.yield(.chunk(text: chunk, tokenIds: pendingTokenIds))
             pendingTokenIds.removeAll(keepingCapacity: true)
           }
@@ -169,13 +215,12 @@ func runPass(
     }
 
     // If generation ended mid-multi-byte UTF-8 scalar, the
-    // detokenizer is still holding the leading bytes (it withholds
-    // anything ending in U+FFFD until the trailing byte arrives).
-    // Those bytes are dropped at end-of-stream by design – this
-    // matches `MLXLMCommon.TextToolTokenLoopHandler.onGenerationEnd`,
-    // which doesn't flush its detokenizer either. Well-behaved
-    // models stop on a whole-scalar boundary; this only bites
-    // pathological models or sharp `length` truncation.
+    // detokenizer is still holding the leading bytes. Those bytes
+    // are dropped at end-of-stream by design – this matches
+    // `MLXLMCommon`'s text token loop handler, which doesn't flush
+    // its detokenizer either. Well-behaved models stop on a
+    // whole-scalar boundary; this only bites pathological models
+    // or sharp `length` truncation.
     await mlxTask.value
     continuation.finish()
   }
@@ -251,3 +296,8 @@ private func translate(_ reason: GenerateStopReason) -> FinishReason {
     case .cancelled: .cancelled
   }
 }
+
+private let runPassLogger = Logger(
+  subsystem: "org.depasquale.lm-response-parser",
+  category: "RunPass",
+)

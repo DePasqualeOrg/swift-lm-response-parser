@@ -25,11 +25,11 @@ struct MLXTokenizerAdapter: ParserTokenizer {
     underlying.convertTokenToId(token)
   }
 
-  func encode(text: String, addSpecialTokens: Bool) -> [Int] {
-    underlying.encode(text: text, addSpecialTokens: addSpecialTokens)
+  func encode(text: String, addSpecialTokens: Bool) throws -> [Int] {
+    try underlying.encode(text: text, addSpecialTokens: addSpecialTokens)
   }
 
-  func decode(tokenIds: [Int], skipSpecialTokens: Bool) -> String {
-    underlying.decode(tokenIds: tokenIds, skipSpecialTokens: skipSpecialTokens)
+  func decode(tokenIds: [Int], skipSpecialTokens: Bool) throws -> String {
+    try underlying.decode(tokenIds: tokenIds, skipSpecialTokens: skipSpecialTokens)
   }
 }

@@ -132,11 +132,11 @@ struct StubTokenizer: ParserTokenizer {
     nil
   }
 
-  func encode(text _: String, addSpecialTokens _: Bool) -> [Int] {
+  func encode(text _: String, addSpecialTokens _: Bool) throws -> [Int] {
     []
   }
 
-  func decode(tokenIds _: [Int], skipSpecialTokens _: Bool) -> String {
+  func decode(tokenIds _: [Int], skipSpecialTokens _: Bool) throws -> String {
     ""
   }
 }

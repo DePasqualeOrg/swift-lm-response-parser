@@ -202,7 +202,7 @@ private func runSinglePass<Element: Sendable>(
     )
     ?? .json
 
-  let effectivePriorOutput = resolvedFormat.combinedPriorOutput(
+  let effectivePriorOutput = try resolvedFormat.combinedPriorOutput(
     fromPreparedPrompt: input,
     tokenizer: adapter,
     generatedPriorOutput: priorOutput,
