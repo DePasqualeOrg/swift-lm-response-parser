@@ -1,7 +1,9 @@
 // Copyright © Anthony DePasquale
 
 import Foundation
+#if canImport(os)
 import os
+#endif
 
 /// Per-token streaming response. Owns the parser, the streaming detokenizer,
 /// the response-scoped envelope, and a live `[ResponseOutputItem]` snapshot
@@ -45,10 +47,28 @@ import os
 /// items were open with their `.inProgress` status, ``finalResponse``
 /// stays nil.
 public final class ResponseStream {
+  #if canImport(os)
   private static let logger = Logger(
     subsystem: "org.depasquale.lm-response-parser",
     category: "ResponseStream",
   )
+  #endif
+
+  private static func logWarning(_ message: String) {
+    #if canImport(os)
+    logger.warning("\(message, privacy: .public)")
+    #else
+    FileHandle.standardError.write(Data("warning: ResponseStream: \(message)\n".utf8))
+    #endif
+  }
+
+  private static func logError(_ message: String) {
+    #if canImport(os)
+    logger.error("\(message, privacy: .public)")
+    #else
+    FileHandle.standardError.write(Data("error: ResponseStream: \(message)\n".utf8))
+    #endif
+  }
 
   private let emitter: ResponseStreamEmitter
   private let tokenizer: any ParserTokenizer
@@ -162,8 +182,8 @@ public final class ResponseStream {
     do {
       chunk = try detokenizer.consume(tokenId)
     } catch let error as StreamingDetokenizerError {
-      Self.logger.warning(
-        "Streaming prefix violated, resetting detokenizer: \(error.localizedDescription, privacy: .public)",
+      Self.logWarning(
+        "Streaming prefix violated, resetting detokenizer: \(error.localizedDescription)",
       )
       detokenizer = tokenizer.streamingDetokenizer()
       do {
@@ -173,8 +193,8 @@ public final class ResponseStream {
         // up with its bytes.
         pendingTokenIds = [tokenId]
       } catch {
-        Self.logger.error(
-          "Detokenizer retry failed; dropping token \(tokenId): \(error.localizedDescription, privacy: .public)",
+        Self.logError(
+          "Detokenizer retry failed; dropping token \(tokenId): \(error.localizedDescription)",
         )
         // Reset already lost prior pending tokens. Retry's transactional
         // rollback means the fresh detokenizer is clean; this token's
@@ -183,8 +203,8 @@ public final class ResponseStream {
         chunk = nil
       }
     } catch {
-      Self.logger.error(
-        "Detokenizer failed; dropping token \(tokenId): \(error.localizedDescription, privacy: .public)",
+      Self.logError(
+        "Detokenizer failed; dropping token \(tokenId): \(error.localizedDescription)",
       )
       // Transactional `consume` rolled back its append, so detokenizer
       // state is unchanged. The failing token never reached internal

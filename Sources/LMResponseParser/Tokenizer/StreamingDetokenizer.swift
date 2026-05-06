@@ -5,7 +5,7 @@ import Foundation
 /// Streams a sequence of token IDs into incrementally emitted text chunks,
 /// implementing the upstream Hugging Face Rust `step_decode_stream` algorithm.
 ///
-/// Feed tokens one at a time through ``consume(_:)``. Each call returns either
+/// Feed tokens one at a time through ``consume(_:)-(Int)``. Each call returns either
 /// a non-empty text chunk that can be displayed, or `nil` to indicate that the
 /// detokenizer has buffered the token because it does not yet form a complete
 /// scalar. Internal state is bounded: after every successful emission the
@@ -43,7 +43,7 @@ public final class StreamingDetokenizer {
 
   /// Creates a stream seeded with prior token IDs.
   ///
-  /// On the first ``consume(_:)`` call, the detokenizer decodes the initial
+  /// On the first ``consume(_:)-(Int)`` call, the detokenizer decodes the initial
   /// IDs to establish its prefix, and only the chunk produced by the new
   /// token is emitted. Use this when resuming a stream after an interruption,
   /// when the initial tokens have already been displayed and should not be
@@ -132,7 +132,7 @@ public final class StreamingDetokenizer {
   /// Consumes a batch of tokens. Returns the concatenation of every chunk
   /// produced, or `nil` if no chunk was produced.
   ///
-  /// Equivalent to repeated calls to ``consume(_:)``. Throws on the first
+  /// Equivalent to repeated calls to ``consume(_:)-(Int)``. Throws on the first
   /// failure; tokens already accumulated into the working chunk before the
   /// throw are discarded, and the detokenizer's internal state reflects only
   /// the successful steps that ran before the failing one.

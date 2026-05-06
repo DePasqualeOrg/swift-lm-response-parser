@@ -13,6 +13,8 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Show Swift version
         run: swift --version
+      - name: Disable git credential helper
+        run: git config --global credential.helper ""
       - name: Build
         run: swift build
       - name: Test
@@ -39,5 +41,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
       - name: Show Swift version
         run: swift --version
+      - name: Disable git credential helper
+        run: git config --global credential.helper ""
       - name: Verify documentation
         run: scripts/verify-docs.sh
