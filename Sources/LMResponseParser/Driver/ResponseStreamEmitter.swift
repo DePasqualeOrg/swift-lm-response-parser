@@ -19,12 +19,11 @@ import Foundation
 ///
 /// for event in emitter.start() { handle(event) }
 ///
-/// var detokenizer = NaiveStreamingDetokenizer(tokenizer: tokenizer)
+/// let detokenizer = tokenizer.streamingDetokenizer()
 /// var pendingTokenIds: [Int] = []
 /// for token in tokens {
-///     detokenizer.append(token: token)
 ///     pendingTokenIds.append(token)
-///     if let chunk = detokenizer.next() {
+///     if let chunk = try detokenizer.consume(token) {
 ///         for event in emitter.process(text: chunk, tokenIds: pendingTokenIds) { handle(event) }
 ///         pendingTokenIds.removeAll()
 ///     }

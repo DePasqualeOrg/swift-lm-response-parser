@@ -238,7 +238,7 @@ struct ChatTemplateRoundTripTests {
       tools: nil,
       additionalContext: nil,
     )
-    let rendered = tokenizer.decode(tokenIds: tokens, skipSpecialTokens: false)
+    let rendered = try tokenizer.decode(tokenIds: tokens, skipSpecialTokens: false)
     #expect(
       rendered.contains(expectedIDInPrompt),
       "Rendered prompt does not contain expected call ID \(expectedIDInPrompt). Rendered: \(rendered)",
@@ -256,11 +256,11 @@ private struct NullParserTokenizer: ParserTokenizer {
     nil
   }
 
-  func encode(text _: String, addSpecialTokens _: Bool) -> [Int] {
+  func encode(text _: String, addSpecialTokens _: Bool) throws -> [Int] {
     []
   }
 
-  func decode(tokenIds _: [Int], skipSpecialTokens _: Bool) -> String {
+  func decode(tokenIds _: [Int], skipSpecialTokens _: Bool) throws -> String {
     ""
   }
 }

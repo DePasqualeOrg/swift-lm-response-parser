@@ -36,8 +36,16 @@ var packageDependencies: [Package.Dependency] = [
 ]
 
 if isApplePlatform {
+  // Temporarily pointed at the DePasqualeOrg fork's
+  // `throwing-tokenizer-api` branch to pick up the throwing
+  // `MLXLMCommon.Tokenizer` API. Revert to the upstream
+  // `ml-explore/mlx-swift-lm` package (and bump the `from:` floor)
+  // once the throwing API ships in a tagged release.
   packageDependencies.append(
-    .package(url: "https://github.com/ml-explore/mlx-swift-lm", from: "3.31.3"),
+    .package(
+      url: "https://github.com/DePasqualeOrg/mlx-swift-lm.git",
+      branch: "throwing-tokenizer-api",
+    ),
   )
 }
 

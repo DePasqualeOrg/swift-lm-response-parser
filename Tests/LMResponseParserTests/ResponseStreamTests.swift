@@ -158,6 +158,69 @@ struct ResponseStreamTests {
       Issue.record("Expected a message item after finalize")
     }
   }
+
+  @Test
+  func `prefix-invariant violation resets the detokenizer and the retry chunk carries only the retry token`() {
+    // The mock decodes [1] as "a" and [1, 2] as "DIFFERENT" — the
+    // two-token decode does not start with "a", so the streaming
+    // detokenizer throws on the second consume. The recovery resets
+    // the detokenizer and retries `consume(2)` on a fresh stream,
+    // where decode([2]) = "b" succeeds. The chunk that reaches the
+    // parser must carry tokenIds = [2] only — the bytes for the
+    // prior token were lost in the reset.
+    let recorder = CallRecorder()
+    let parser = ScriptedParser(
+      onProcess: { input in
+        recorder.record(text: input.text, tokenIds: input.tokenIds)
+        return []
+      },
+    )
+    let stream = ResponseStream(
+      parser: parser,
+      config: ResponseStreamConfig(model: "test-model"),
+      tokenizer: NonMonotonicTokenizer(),
+    )
+    _ = stream.start()
+    _ = stream.process(tokenId: 1)
+    _ = stream.process(tokenId: 2)
+
+    let calls = recorder.calls
+    #expect(calls.count == 2)
+    #expect(calls[0].text == "a")
+    #expect(calls[0].tokenIds == [1])
+    #expect(calls[1].text == "b")
+    #expect(calls[1].tokenIds == [2])
+  }
+
+  @Test
+  func `pass-through decode error drops only the failing token from the pending buffer`() {
+    // Token 1 decodes to U+FFFD (mid-scalar withhold) and pending
+    // becomes [1]. Token 99 makes decode throw mid-call; the
+    // detokenizer's transactional rollback leaves its state intact,
+    // and the wrapper drops just the failing token from pending so
+    // the original mid-scalar token is preserved. Token 2 completes
+    // the scalar and emits with tokenIds = [1, 2].
+    let recorder = CallRecorder()
+    let parser = ScriptedParser(
+      onProcess: { input in
+        recorder.record(text: input.text, tokenIds: input.tokenIds)
+        return []
+      },
+    )
+    let stream = ResponseStream(
+      parser: parser,
+      config: ResponseStreamConfig(model: "test-model"),
+      tokenizer: SelectiveFailureTokenizer(),
+    )
+    _ = stream.start()
+    _ = stream.process(tokenId: 1)
+    _ = stream.process(tokenId: 99)
+    _ = stream.process(tokenId: 2)
+
+    #expect(recorder.calls.count == 1)
+    #expect(recorder.calls[0].text == "🌍")
+    #expect(recorder.calls[0].tokenIds == [1, 2])
+  }
 }
 
 // MARK: Test helpers
@@ -191,11 +254,11 @@ private struct AlphabetTokenizer: ParserTokenizer {
     nil
   }
 
-  func encode(text _: String, addSpecialTokens _: Bool) -> [Int] {
+  func encode(text _: String, addSpecialTokens _: Bool) throws -> [Int] {
     []
   }
 
-  func decode(tokenIds: [Int], skipSpecialTokens _: Bool) -> String {
+  func decode(tokenIds: [Int], skipSpecialTokens _: Bool) throws -> String {
     let alphabet = Array("abcdefghijklmnopqrstuvwxyz")
     return String(tokenIds.map { alphabet[($0 - 1) % alphabet.count] })
   }
@@ -203,22 +266,76 @@ private struct AlphabetTokenizer: ParserTokenizer {
 
 /// Splits U+1F600 (😀) across two tokens. Token 1 alone decodes to a lone
 /// U+FFFD (the byte sequence is incomplete); tokens 1+2 together decode to
-/// the full emoji. Exercises `NaiveStreamingDetokenizer`'s mid-scalar
+/// the full emoji. Exercises `StreamingDetokenizer`'s mid-scalar
 /// withholding path.
 private struct SplitScalarTokenizer: ParserTokenizer {
   func convertTokenToId(_: String) -> Int? {
     nil
   }
 
-  func encode(text _: String, addSpecialTokens _: Bool) -> [Int] {
+  func encode(text _: String, addSpecialTokens _: Bool) throws -> [Int] {
     []
   }
 
-  func decode(tokenIds: [Int], skipSpecialTokens _: Bool) -> String {
+  func decode(tokenIds: [Int], skipSpecialTokens _: Bool) throws -> String {
     switch tokenIds {
       case [1]: "\u{FFFD}"
       case [1, 2]: "\u{1F600}"
       default: ""
     }
+  }
+}
+
+/// Decodes [1] as "a" and [2] as "b", but [1, 2] as "DIFFERENT" —
+/// breaks the byte-prefix-monotonic invariant the streaming
+/// detokenizer requires, triggering its prefix-invariant error on
+/// the second token. After a reset, decode([2]) alone succeeds, so
+/// the wrapper's retry path produces a clean chunk.
+private struct NonMonotonicTokenizer: ParserTokenizer {
+  func convertTokenToId(_: String) -> Int? {
+    nil
+  }
+
+  func encode(text _: String, addSpecialTokens _: Bool) throws -> [Int] {
+    []
+  }
+
+  func decode(tokenIds: [Int], skipSpecialTokens _: Bool) throws -> String {
+    switch tokenIds {
+      case [1]: "a"
+      case [2]: "b"
+      case [1, 2]: "DIFFERENT"
+      default: ""
+    }
+  }
+}
+
+/// Splits 🌍 across tokens 1 and 2, but rejects token 99. Lets us
+/// drive a sequence where (a) token 1 returns U+FFFD and is held,
+/// (b) token 99 makes decode throw, and (c) token 2 completes the
+/// scalar — exercising the wrapper's "drop just the failing token"
+/// branch.
+private struct SelectiveFailureTokenizer: ParserTokenizer {
+  struct Failure: Error {}
+
+  func convertTokenToId(_: String) -> Int? {
+    nil
+  }
+
+  func encode(text _: String, addSpecialTokens _: Bool) throws -> [Int] {
+    []
+  }
+
+  func decode(tokenIds: [Int], skipSpecialTokens _: Bool) throws -> String {
+    if tokenIds.contains(99) { throw Failure() }
+    var bytes: [UInt8] = []
+    for id in tokenIds {
+      switch id {
+        case 1: bytes.append(contentsOf: [0xF0, 0x9F]) // first half of 🌍
+        case 2: bytes.append(contentsOf: [0x8C, 0x8D]) // second half of 🌍
+        default: break
+      }
+    }
+    return String(decoding: bytes, as: UTF8.self)
   }
 }

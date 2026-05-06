@@ -1,6 +1,7 @@
 // Copyright © Anthony DePasquale
 
 import Foundation
+import os
 
 /// Per-token streaming response. Owns the parser, the streaming detokenizer,
 /// the response-scoped envelope, and a live `[ResponseOutputItem]` snapshot
@@ -44,8 +45,14 @@ import Foundation
 /// items were open with their `.inProgress` status, ``finalResponse``
 /// stays nil.
 public final class ResponseStream {
+  private static let logger = Logger(
+    subsystem: "org.depasquale.lm-response-parser",
+    category: "ResponseStream",
+  )
+
   private let emitter: ResponseStreamEmitter
-  private var detokenizer: NaiveStreamingDetokenizer
+  private let tokenizer: any ParserTokenizer
+  private var detokenizer: StreamingDetokenizer
   private var pendingTokenIds: [Int] = []
   private var outputTokenCount: Int = 0
   private var accumulator = ResponseItemsAccumulator()
@@ -103,7 +110,8 @@ public final class ResponseStream {
     tokenizer: any ParserTokenizer,
   ) {
     emitter = ResponseStreamEmitter(parser: parser, config: config)
-    detokenizer = NaiveStreamingDetokenizer(tokenizer: tokenizer)
+    self.tokenizer = tokenizer
+    detokenizer = tokenizer.streamingDetokenizer()
   }
 
   /// Yield the lifecycle-envelope events that must appear at the head of
@@ -128,10 +136,64 @@ public final class ResponseStream {
   /// items snapshot is updated regardless.
   @discardableResult
   public func process(tokenId: Int) -> [ResponseStreamingEvent] {
-    detokenizer.append(token: tokenId)
     pendingTokenIds.append(tokenId)
     outputTokenCount += 1
-    guard let chunk = detokenizer.next() else { return [] }
+
+    // vLLM-style recovery contract for the streaming detokenizer.
+    // `pendingTokenIds` tracks the token IDs whose bytes will appear in
+    // the next emitted chunk; each `consume` outcome demands a different
+    // mutation:
+    //
+    //   * Returns String  → cleared after emit (chunk's bytes carried
+    //                       all currently-pending tokens).
+    //   * Returns nil     → token stays pending (its bytes are buffered
+    //                       in the detokenizer for a future chunk).
+    //   * Throws prefix invariant, retry succeeds → reset destroyed the
+    //                       detokenizer's buffered bytes, so prior
+    //                       pending tokens' bytes are lost. Pin to
+    //                       [tokenId] so the chunk's `tokenIds` align.
+    //   * Throws prefix invariant, retry also throws → reset already
+    //                       lost prior pendings; the failing token's
+    //                       bytes are unrecoverable. Clear fully.
+    //   * Throws other (decode pass-through) → transactional `consume`
+    //                       rolled back its append; detokenizer state
+    //                       unchanged. Drop just the failing token.
+    let chunk: String?
+    do {
+      chunk = try detokenizer.consume(tokenId)
+    } catch let error as StreamingDetokenizerError {
+      Self.logger.warning(
+        "Streaming prefix violated, resetting detokenizer: \(error.localizedDescription, privacy: .public)",
+      )
+      detokenizer = tokenizer.streamingDetokenizer()
+      do {
+        chunk = try detokenizer.consume(tokenId)
+        // Reset discarded the prior pending tokens' bytes; only the
+        // retry-target stays so the next emitted chunk's `tokenIds` line
+        // up with its bytes.
+        pendingTokenIds = [tokenId]
+      } catch {
+        Self.logger.error(
+          "Detokenizer retry failed; dropping token \(tokenId): \(error.localizedDescription, privacy: .public)",
+        )
+        // Reset already lost prior pending tokens. Retry's transactional
+        // rollback means the fresh detokenizer is clean; this token's
+        // bytes are unrecoverable.
+        pendingTokenIds.removeAll(keepingCapacity: true)
+        chunk = nil
+      }
+    } catch {
+      Self.logger.error(
+        "Detokenizer failed; dropping token \(tokenId): \(error.localizedDescription, privacy: .public)",
+      )
+      // Transactional `consume` rolled back its append, so detokenizer
+      // state is unchanged. The failing token never reached internal
+      // state — drop just it from the pending buffer.
+      pendingTokenIds.removeLast()
+      chunk = nil
+    }
+
+    guard let chunk else { return [] }
     let events = emitter.process(text: chunk, tokenIds: pendingTokenIds)
     pendingTokenIds.removeAll(keepingCapacity: true)
     accumulator.ingest(events)
