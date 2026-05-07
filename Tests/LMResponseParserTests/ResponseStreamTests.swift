@@ -80,6 +80,7 @@ struct ResponseStreamTests {
       parser: NoOpParser(),
       config: ResponseStreamConfig(model: "test-model"),
       tokenizer: tokenizer,
+      promptTokenIds: [],
     )
     _ = stream.start()
     _ = stream.process(tokenId: 1) // decodes to lone replacement char
@@ -179,6 +180,7 @@ struct ResponseStreamTests {
       parser: parser,
       config: ResponseStreamConfig(model: "test-model"),
       tokenizer: NonMonotonicTokenizer(),
+      promptTokenIds: [],
     )
     _ = stream.start()
     _ = stream.process(tokenId: 1)
@@ -211,6 +213,7 @@ struct ResponseStreamTests {
       parser: parser,
       config: ResponseStreamConfig(model: "test-model"),
       tokenizer: SelectiveFailureTokenizer(),
+      promptTokenIds: [],
     )
     _ = stream.start()
     _ = stream.process(tokenId: 1)
@@ -230,6 +233,7 @@ private func makeStream(parser: any ResponseFormatParser) -> ResponseStream {
     parser: parser,
     config: ResponseStreamConfig(model: "test-model", createdAt: 1_700_000_000),
     tokenizer: AlphabetTokenizer(),
+    promptTokenIds: [],
   )
 }
 

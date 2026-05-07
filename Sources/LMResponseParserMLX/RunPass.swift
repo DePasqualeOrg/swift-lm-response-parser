@@ -136,82 +136,92 @@ func runPass(
 
   let (outStream, continuation) = AsyncStream<PassOutput>.makeStream()
 
-  let processor = Task { [dropIds, adapter] in
+  // Seed with the prompt tail — enough to defeat decoder cleanup at the
+  // prompt/generated boundary (vLLM uses `prompt_ids[-7:]`).
+  let promptSeedIds = Array(input.text.tokens.asArray(Int.self).suffix(7))
+
+  let processor = Task { [dropIds, adapter, promptSeedIds] in
     // Use the parser-library `StreamingDetokenizer` (which takes
     // `ParserTokenizer`) rather than `MLXLMCommon`'s version, so the
     // bridge sees the parser-local `StreamingDetokenizerError` for
     // recovery and the parser layer stays decoupled from any
     // particular tokenizer ecosystem.
-    var detokenizer = adapter.streamingDetokenizer()
+    var detokenizer = adapter.streamingDetokenizer(initialTokenIds: promptSeedIds)
     var pendingTokenIds: [Int] = []
 
-    for await event in mlxStream {
-      switch event {
-        case let .token(id):
-          if dropIds.contains(id) {
-            continue
-          }
-          pendingTokenIds.append(id)
+    do {
+      for try await event in mlxStream {
+        switch event {
+          case let .token(id):
+            if dropIds.contains(id) {
+              continue
+            }
+            pendingTokenIds.append(id)
 
-          // vLLM-style recovery contract for the streaming detokenizer.
-          // `pendingTokenIds` tracks the token IDs whose bytes will
-          // appear in the next emitted chunk; each `consume` outcome
-          // demands a different mutation:
-          //
-          //   * Returns String  → cleared after emit.
-          //   * Returns nil     → token stays pending (bytes buffered
-          //                       in the detokenizer for a future chunk).
-          //   * Throws prefix invariant, retry succeeds → reset
-          //                       destroyed the detokenizer's buffered
-          //                       bytes; prior pending tokens' bytes
-          //                       are lost. Pin to [id] so the chunk's
-          //                       `tokenIds` align.
-          //   * Throws prefix invariant, retry also throws → reset
-          //                       already lost prior pendings; the
-          //                       failing token's bytes are
-          //                       unrecoverable. Clear fully.
-          //   * Throws other (decode pass-through) → transactional
-          //                       `consume` rolled back; detokenizer
-          //                       state unchanged. Drop just the
-          //                       failing token.
-          let chunk: String?
-          do {
-            chunk = try detokenizer.consume(id)
-          } catch let error as StreamingDetokenizerError {
-            runPassLogger.warning(
-              "Streaming prefix violated, resetting detokenizer: \(error.localizedDescription, privacy: .public)",
-            )
-            detokenizer = adapter.streamingDetokenizer()
+            // vLLM-style recovery contract for the streaming detokenizer.
+            // `pendingTokenIds` tracks the token IDs whose bytes will
+            // appear in the next emitted chunk; each `consume` outcome
+            // demands a different mutation:
+            //
+            //   * Returns String  → cleared after emit.
+            //   * Returns nil     → token stays pending (bytes buffered
+            //                       in the detokenizer for a future chunk).
+            //   * Throws prefix invariant, retry succeeds → reset
+            //                       destroyed the detokenizer's buffered
+            //                       bytes; prior pending tokens' bytes
+            //                       are lost. Pin to [id] so the chunk's
+            //                       `tokenIds` align.
+            //   * Throws prefix invariant, retry also throws → reset
+            //                       already lost prior pendings; the
+            //                       failing token's bytes are
+            //                       unrecoverable. Clear fully.
+            //   * Throws other (decode pass-through) → transactional
+            //                       `consume` rolled back; detokenizer
+            //                       state unchanged. Drop just the
+            //                       failing token.
+            let chunk: String?
             do {
               chunk = try detokenizer.consume(id)
-              pendingTokenIds = [id]
+            } catch let error as StreamingDetokenizerError {
+              runPassLogger.warning(
+                "Streaming prefix violated, resetting detokenizer: \(error.localizedDescription, privacy: .public)",
+              )
+              detokenizer = adapter.streamingDetokenizer()
+              do {
+                chunk = try detokenizer.consume(id)
+                pendingTokenIds = [id]
+              } catch {
+                runPassLogger.error(
+                  "Detokenizer retry failed; dropping token \(id): \(error.localizedDescription, privacy: .public)",
+                )
+                pendingTokenIds.removeAll(keepingCapacity: true)
+                chunk = nil
+              }
             } catch {
               runPassLogger.error(
-                "Detokenizer retry failed; dropping token \(id): \(error.localizedDescription, privacy: .public)",
+                "Detokenizer failed; dropping token \(id): \(error.localizedDescription, privacy: .public)",
               )
-              pendingTokenIds.removeAll(keepingCapacity: true)
+              pendingTokenIds.removeLast()
               chunk = nil
             }
-          } catch {
-            runPassLogger.error(
-              "Detokenizer failed; dropping token \(id): \(error.localizedDescription, privacy: .public)",
-            )
-            pendingTokenIds.removeLast()
-            chunk = nil
-          }
 
-          if let chunk {
-            continuation.yield(.chunk(text: chunk, tokenIds: pendingTokenIds))
-            pendingTokenIds.removeAll(keepingCapacity: true)
-          }
+            if let chunk {
+              continuation.yield(.chunk(text: chunk, tokenIds: pendingTokenIds))
+              pendingTokenIds.removeAll(keepingCapacity: true)
+            }
 
-        case let .info(info):
-          continuation.yield(.finished(PassFinishInfo(
-            inputTokens: info.promptTokenCount,
-            outputTokens: info.generationTokenCount,
-            finishReason: translate(info.stopReason),
-          )))
+          case let .info(info):
+            continuation.yield(.finished(PassFinishInfo(
+              inputTokens: info.promptTokenCount,
+              outputTokens: info.generationTokenCount,
+              finishReason: translate(info.stopReason),
+            )))
+        }
       }
+    } catch {
+      runPassLogger.error(
+        "Generation stream failed: \(error.localizedDescription, privacy: .public)",
+      )
     }
 
     // If generation ended mid-multi-byte UTF-8 scalar, the

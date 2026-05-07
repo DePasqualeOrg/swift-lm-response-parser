@@ -112,26 +112,40 @@ public final class ResponseStream {
 
   /// Construct a stream for `format`. The parser is built internally;
   /// pass `priorOutput` for continuation requests so the parser can
-  /// resume an unclosed reasoning block from prior output.
+  /// resume an unclosed reasoning block from prior output. Pass the
+  /// prompt's token IDs as `promptTokenIds` so the streaming detokenizer
+  /// decodes the first generated chunk correctly at the prompt/generated
+  /// boundary; `[]` is only correct when no prompt context exists.
   public convenience init(
     format: ResponseFormat,
     config: ResponseStreamConfig,
     tokenizer: any ParserTokenizer,
+    promptTokenIds: [Int],
     tools: [ToolSpec] = [],
     priorOutput: String? = nil,
   ) {
     let parser = format.makeParser(tokenizer: tokenizer, tools: tools, priorOutput: priorOutput)
-    self.init(parser: parser, config: config, tokenizer: tokenizer)
+    self.init(
+      parser: parser,
+      config: config,
+      tokenizer: tokenizer,
+      promptTokenIds: promptTokenIds,
+    )
   }
 
   init(
     parser: any ResponseFormatParser,
     config: ResponseStreamConfig,
     tokenizer: any ParserTokenizer,
+    promptTokenIds: [Int],
   ) {
     emitter = ResponseStreamEmitter(parser: parser, config: config)
     self.tokenizer = tokenizer
-    detokenizer = tokenizer.streamingDetokenizer()
+    // Seed with the prompt tail — enough to defeat decoder cleanup at the
+    // prompt/generated boundary (vLLM uses `prompt_ids[-7:]`).
+    detokenizer = tokenizer.streamingDetokenizer(
+      initialTokenIds: Array(promptTokenIds.suffix(7)),
+    )
   }
 
   /// Yield the lifecycle-envelope events that must appear at the head of
