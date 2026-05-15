@@ -16,7 +16,7 @@ Swift LM Responses turns language model output into [Open Responses](https://www
 Add the package as a dependency in your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/DePasqualeOrg/swift-lm-responses", from: "0.1.1")
+.package(url: "https://github.com/DePasqualeOrg/swift-lm-responses", from: "0.2.0")
 ```
 
 Then add the library you need to your target. Parser-only consumers depend on `LMResponses`:
