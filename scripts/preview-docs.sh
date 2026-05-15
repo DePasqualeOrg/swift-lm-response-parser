@@ -1,9 +1,9 @@
 #!/bin/bash
-# Preview documentation with live reload on http://localhost:8080/documentation/lmresponseparser.
+# Preview documentation with live reload on http://localhost:8080/documentation/lmresponses.
 #
 # Unlike `swift package preview-documentation`, this script loads the symbol
 # graphs for every library target so cross-target symbol links (e.g.
-# ``/LMResponseParser/ResponseStream`` from inside an LMResponseParserMLX
+# ``/LMResponses/ResponseStream`` from inside an LMResponsesMLX
 # article) resolve correctly. The preview plugin only supports a single
 # --target at a time, so we invoke `docc preview` directly, passing the
 # parent symbol-graph directory that contains every target's extracted graphs.
@@ -103,16 +103,16 @@ if [ -z "$SYMBOL_GRAPH_DIR" ]; then
     exit 1
 fi
 
-# Preview LMResponseParser as the home; symbols from sibling targets remain
+# Preview LMResponses as the home; symbols from sibling targets remain
 # resolvable via the combined symbol-graph directory passed below.
-CATALOG="Sources/LMResponseParser/Documentation.docc"
+CATALOG="Sources/LMResponses/Documentation.docc"
 
 echo "Starting preview server..."
 DOCC_HTML_DIR="$DOCC_HTML_DIR" \
 "$DOCC" preview "$CATALOG" \
     --additional-symbol-graph-dir "$SYMBOL_GRAPH_DIR" \
-    --fallback-display-name LMResponseParser \
-    --fallback-bundle-identifier LMResponseParser &
+    --fallback-display-name LMResponses \
+    --fallback-bundle-identifier LMResponses &
 CHILD_PID=$!
 
 wait "$CHILD_PID"

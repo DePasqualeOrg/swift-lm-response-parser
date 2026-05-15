@@ -1,5 +1,5 @@
 version: 1
 builder:
   configs:
-    - documentation_targets: [LMResponseParser, LMResponseParserMLX]
+    - documentation_targets: [LMResponses, LMResponsesMLX]
       custom_documentation_parameters: [--enable-experimental-combined-documentation]

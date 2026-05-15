@@ -5,7 +5,7 @@
 # Package.swift) rather than Apple's toolchain `xcrun docc`. This is a
 # workaround for swift-docc PR #1327 (merged 2025-11-12) which fixes
 # combined-documentation cross-target symbol-link resolution: in
-# combined-documentation mode, absolute links like ``/LMResponseParser/ResponseStream``
+# combined-documentation mode, absolute links like ``/LMResponses/ResponseStream``
 # are mis-resolved as relative paths when the package contains public
 # extensions of dependency-module types. The fix is on swift-docc main but
 # has not shipped in a released Xcode toolchain yet.
@@ -55,7 +55,7 @@ export DOCC_HTML_DIR="$(xcrun --find docc | sed 's|/bin/docc$|/share/docc/render
 
 # Build all library targets together with combined documentation so that
 # articles in one target can use absolute symbol links (e.g.
-# ``/LMResponseParser/ResponseStream``) to reference symbols in sibling targets.
+# ``/LMResponses/ResponseStream``) to reference symbols in sibling targets.
 TARGET_ARGS=()
 while IFS= read -r TARGET; do
     TARGET_ARGS+=(--target "$TARGET")

@@ -3,7 +3,7 @@
 import PackageDescription
 
 // Integration tests live in their own test target so they can be gated
-// behind the `LMRESPONSE_PARSER_INTEGRATION_TESTS=1` environment
+// behind the `LMRESPONSES_INTEGRATION_TESTS=1` environment
 // variable at manifest-evaluation time. The integration tests download
 // MLX model snapshots and need MLX's Metal shader library, which is only
 // produced by Xcode's build phases — not by plain `swift test` — so we
@@ -13,11 +13,11 @@ import PackageDescription
 //
 // Mirrors swift-tokenizers' Benchmarks-target pattern.
 let integrationTestsEnabled =
-  Context.environment["LMRESPONSE_PARSER_INTEGRATION_TESTS"] == "1"
+  Context.environment["LMRESPONSES_INTEGRATION_TESTS"] == "1"
 
 // MLX is Apple-only (Metal/Accelerate). The MLX-backed library, its
 // tests, and the integration tests are excluded on non-Apple platforms
-// so Linux CI can build and test the pure-Swift `LMResponseParser`
+// so Linux CI can build and test the pure-Swift `LMResponses`
 // target without dragging MLX into the build graph.
 #if canImport(Darwin)
 let isApplePlatform = true
@@ -57,49 +57,49 @@ if isApplePlatform, integrationTestsEnabled {
 
 var packageProducts: [Product] = [
   .library(
-    name: "LMResponseParser",
-    targets: ["LMResponseParser"],
+    name: "LMResponses",
+    targets: ["LMResponses"],
   ),
 ]
 
 if isApplePlatform {
   packageProducts.append(
     .library(
-      name: "LMResponseParserMLX",
-      targets: ["LMResponseParserMLX"],
+      name: "LMResponsesMLX",
+      targets: ["LMResponsesMLX"],
     ),
   )
 }
 
 var packageTargets: [Target] = [
   .target(
-    name: "LMResponseParser",
-    path: "Sources/LMResponseParser",
+    name: "LMResponses",
+    path: "Sources/LMResponses",
   ),
   .testTarget(
-    name: "LMResponseParserTests",
-    dependencies: ["LMResponseParser"],
-    path: "Tests/LMResponseParserTests",
+    name: "LMResponsesTests",
+    dependencies: ["LMResponses"],
+    path: "Tests/LMResponsesTests",
   ),
 ]
 
 if isApplePlatform {
   packageTargets.append(contentsOf: [
     .target(
-      name: "LMResponseParserMLX",
+      name: "LMResponsesMLX",
       dependencies: [
-        "LMResponseParser",
+        "LMResponses",
         .product(name: "MLXLMCommon", package: "swift-lm"),
       ],
-      path: "Sources/LMResponseParserMLX",
+      path: "Sources/LMResponsesMLX",
     ),
     .testTarget(
-      name: "LMResponseParserMLXTests",
+      name: "LMResponsesMLXTests",
       dependencies: [
-        "LMResponseParserMLX",
+        "LMResponsesMLX",
         .product(name: "MLXLMCommon", package: "swift-lm"),
       ],
-      path: "Tests/LMResponseParserMLXTests",
+      path: "Tests/LMResponsesMLXTests",
     ),
   ])
 }
@@ -107,21 +107,21 @@ if isApplePlatform {
 if isApplePlatform, integrationTestsEnabled {
   packageTargets.append(
     .testTarget(
-      name: "LMResponseParserMLXIntegrationTests",
+      name: "LMResponsesMLXIntegrationTests",
       dependencies: [
-        "LMResponseParserMLX",
+        "LMResponsesMLX",
         .product(name: "MLXLMCommon", package: "swift-lm"),
         .product(name: "MLXLLM", package: "swift-lm"),
         .product(name: "HFAPI", package: "swift-hf-api"),
         .product(name: "Tokenizers", package: "swift-tokenizers"),
       ],
-      path: "Tests/LMResponseParserMLXIntegrationTests",
+      path: "Tests/LMResponsesMLXIntegrationTests",
     ),
   )
 }
 
 let package = Package(
-  name: "swift-lm-response-parser",
+  name: "swift-lm-responses",
   platforms: [
     .macOS(.v14),
     .iOS(.v17),

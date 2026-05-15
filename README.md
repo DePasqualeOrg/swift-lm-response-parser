@@ -1,37 +1,37 @@
-# Swift LM Response Parser
+# Swift LM Responses
 
-[![Swift Version Compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FDePasqualeOrg%2Fswift-lm-response-parser%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser) [![Platform Compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FDePasqualeOrg%2Fswift-lm-response-parser%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser)
+[![Swift Version Compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FDePasqualeOrg%2Fswift-lm-responses%2Fbadge%3Ftype%3Dswift-versions)](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-responses) [![Platform Compatibility](https://img.shields.io/endpoint?url=https%3A%2F%2Fswiftpackageindex.com%2Fapi%2Fpackages%2FDePasqualeOrg%2Fswift-lm-responses%2Fbadge%3Ftype%3Dplatforms)](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-responses)
 
 > Note: This library is in early development. Expect breaking changes.
 
-Swift LM Response Parser turns language model output into [Open Responses](https://www.openresponses.org/) streaming events.
+Swift LM Responses turns language model output into [Open Responses](https://www.openresponses.org/) streaming events.
 
-- [Documentation](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparser)
-- [Getting Started](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparser/getting-started)
-- [Streaming](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparser/streaming)
-- [MLX Integration](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-response-parser/main/documentation/lmresponseparsermlx/mlx-session)
+- [Documentation](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-responses/main/documentation/lmresponses)
+- [Getting Started](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-responses/main/documentation/lmresponses/getting-started)
+- [Streaming](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-responses/main/documentation/lmresponses/streaming)
+- [MLX Integration](https://swiftpackageindex.com/DePasqualeOrg/swift-lm-responses/main/documentation/lmresponsesmlx/mlx-session)
 
 ## Installation
 
 Add the package as a dependency in your `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/DePasqualeOrg/swift-lm-response-parser", from: "0.1.1")
+.package(url: "https://github.com/DePasqualeOrg/swift-lm-responses", from: "0.1.1")
 ```
 
-Then add the library you need to your target. Parser-only consumers depend on `LMResponseParser`:
+Then add the library you need to your target. Parser-only consumers depend on `LMResponses`:
 
 ```swift
 .target(name: "MyApp", dependencies: [
-    .product(name: "LMResponseParser", package: "swift-lm-response-parser"),
+    .product(name: "LMResponses", package: "swift-lm-responses"),
 ])
 ```
 
-MLX consumers depend on `LMResponseParserMLX`:
+MLX consumers depend on `LMResponsesMLX`:
 
 ```swift
 .target(name: "MyApp", dependencies: [
-    .product(name: "LMResponseParserMLX", package: "swift-lm-response-parser"),
+    .product(name: "LMResponsesMLX", package: "swift-lm-responses"),
 ])
 ```
 
@@ -74,7 +74,7 @@ The library is in early development. Planned changes include:
 
 - **Data-driven parser routing registry.** The current routing logic in `ResponseFormat.infer(...)` is hardcoded. A future revision will expose the routing rules as data so consumers can augment or override routing without forking, and so a deployed app can pick up support for newly released models without rebuilding.
 - **Custom parser registration.** The set of supported parsers is closed today – adding a new wire format requires modifying the library. A future revision will let consumers register their own parser implementations against the routing layer, so applications can support proprietary or experimental formats without forking.
-- **Token-ID-aware marker hardening.** The library was designed from the beginning with optional token-ID plumbing: `ParserInput` can carry aligned token IDs, `ResponseStream` and the MLX bridge already preserve them, and `ParserTokenizer` exposes marker-ID lookup. Current parsers intentionally use SGLang-style text matching, but a future revision can use token IDs for targeted formats where reserved marker strings need to be distinguished from ordinary text that decodes the same way.
+- **Token-ID-aware marker hardening.** The library was designed from the beginning with optional token-ID plumbing: `ParserInput` can carry aligned token IDs, `ResponseStream` and the MLX bridge already preserve them, and `ResponseTokenizer` exposes marker-ID lookup. Current parsers intentionally use SGLang-style text matching, but a future revision can use token IDs for targeted formats where reserved marker strings need to be distinguished from ordinary text that decodes the same way.
 
 ## Acknowledgements
 
