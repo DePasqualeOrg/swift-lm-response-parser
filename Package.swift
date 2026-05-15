@@ -42,7 +42,7 @@ if isApplePlatform {
   // the throwing API ships in a tagged release.
   packageDependencies.append(
     .package(
-      url: "https://github.com/DePasqualeOrg/mlx-swift-lm.git",
+      url: "https://github.com/DePasqualeOrg/swift-lm.git",
       branch: "main",
     ),
   )
@@ -89,7 +89,7 @@ if isApplePlatform {
       name: "LMResponseParserMLX",
       dependencies: [
         "LMResponseParser",
-        .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+        .product(name: "MLXLMCommon", package: "swift-lm"),
       ],
       path: "Sources/LMResponseParserMLX",
     ),
@@ -97,7 +97,7 @@ if isApplePlatform {
       name: "LMResponseParserMLXTests",
       dependencies: [
         "LMResponseParserMLX",
-        .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
+        .product(name: "MLXLMCommon", package: "swift-lm"),
       ],
       path: "Tests/LMResponseParserMLXTests",
     ),
@@ -110,8 +110,8 @@ if isApplePlatform, integrationTestsEnabled {
       name: "LMResponseParserMLXIntegrationTests",
       dependencies: [
         "LMResponseParserMLX",
-        .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
-        .product(name: "MLXLLM", package: "mlx-swift-lm"),
+        .product(name: "MLXLMCommon", package: "swift-lm"),
+        .product(name: "MLXLLM", package: "swift-lm"),
         .product(name: "HFAPI", package: "swift-hf-api"),
         .product(name: "Tokenizers", package: "swift-tokenizers"),
       ],
