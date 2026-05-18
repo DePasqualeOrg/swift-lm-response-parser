@@ -140,6 +140,15 @@ public enum ResponseFormat: Sendable, Equatable, CaseIterable {
   /// ``ernie``, with an implicit reasoning preamble that ends at
   /// `</think>`.
   case ernieThinking
+  /// Cohere Command R7B / Command A Reasoning – marker-driven format
+  /// using `<|START_THINKING|>` / `<|START_ACTION|>` / `<|START_RESPONSE|>`
+  /// regions, with JSON-array tool calls and inline `<co>` citations.
+  case cohereCmd3
+  /// Cohere Command 4 (Cohere2 Vision) – superset of ``cohereCmd3``
+  /// that additionally registers `<|START_TEXT|>` / `<|END_TEXT|>` and
+  /// can be constructed in a reasoning-default initial state when the
+  /// chat template injected `<|START_THINKING|>`.
+  case cohereCmd4
   /// Best-effort top-level JSON tool-call detection. Used as a fallback
   /// when neither the name nor model_type tables resolve.
   case json
@@ -339,6 +348,20 @@ extension ResponseFormat {
     ("seed_oss", .seedOss),
     ("bytedance-seed-seed-oss", .seedOss),
     ("bytedance-seed-oss", .seedOss),
+
+    // Cohere2 family. Architecture is shared between cmd3 (Command R7B,
+    // Command A Reasoning) and forward-looking cmd4 checkpoints, so
+    // name discrimination is required. vLLM's
+    // `docs/features/tool_calling.md` documents
+    // `command-a-reasoning-08-2025` as `cohere_command3`, not cmd4.
+    // `.cohereCmd4` has no name-prefix entries today — no published
+    // Cohere checkpoint uses cmd4 by name.
+    ("c4ai-command-r7b", .cohereCmd3),
+    ("cohereforai-c4ai-command-r7b", .cohereCmd3),
+    ("command-r7b", .cohereCmd3),
+    ("command-a-reasoning", .cohereCmd3),
+    ("coherelabs-command-a-reasoning", .cohereCmd3),
+    ("cohereforai-command-a-reasoning", .cohereCmd3),
   ]
 
   /// Type-prefix table. Match is `String.hasPrefix` on the lowercased
@@ -410,6 +433,17 @@ extension ResponseFormat {
 
     // GPT-OSS / Harmony reserved-token protocol.
     ("gpt_oss", .harmony),
+
+    // Cohere2 family. Vision adds `<|START_TEXT|>` / `<|END_TEXT|>`
+    // markers (vLLM's `MODEL_TO_TAG_STYLE` lists both `START_RESPONSE`
+    // and `START_TEXT` for Cohere2Vision), so it routes to cmd4. Base
+    // and MoE use only `START_RESPONSE` and route to cmd3. Original
+    // `CohereForCausalLM` (`model_type: cohere`) is deliberately
+    // omitted — its text-marker (`Action:` / `Grounded answer:`) wire
+    // format is out of scope.
+    ("cohere2_vision", .cohereCmd4),
+    ("cohere2_moe", .cohereCmd3),
+    ("cohere2", .cohereCmd3),
   ]
 
   /// Resolve a response format from `model_type` plus optional secondary
@@ -648,6 +682,15 @@ extension ResponseFormat {
             ? .reasoning
             : .normal,
         )
+      case .cohereCmd3:
+        CohereParser(variant: .cmd3)
+      case .cohereCmd4:
+        CohereParser(
+          variant: .cmd4,
+          initialState: Self.cohereThinkBoundary.isOpen(in: priorOutput)
+            ? .reasoning
+            : .groundedAnswer,
+        )
       case .json:
         JSONFallbackParser()
     }
@@ -667,6 +710,8 @@ extension ResponseFormat {
     ImplicitReasoningPreamble.think(implicitEndTokens: ["<|tool_calls_section_begin|>"])
   private static let seedOssPreamble =
     ImplicitReasoningPreamble(endTokens: ["</seed:think>"])
+  private static let cohereThinkBoundary =
+    DelimitedReasoningBoundary(start: "<|START_THINKING|>", end: "<|END_THINKING|>")
 
   /// Returns true when `priorOutput` ended inside an unclosed Harmony
   /// `analysis` block – the only Harmony state we resume from per
@@ -785,7 +830,8 @@ public extension ResponseFormat {
            .olmo3Thinking, .phi4Mini,
            .phiReasoning, .gemmaFunctionCall, .gemma4, .kimiK2, .kimiK2Thinking,
            .miniMaxM2, .miniMax, .glm4, .glm4Thinking, .longcat, .granite, .granite20bFc, .granite4, .internlm, .jamba,
-           .hunyuanA13B, .magistral, .xlam, .seedOss, .step3p5, .ernie, .ernieThinking, .json:
+           .hunyuanA13B, .magistral, .xlam, .seedOss, .step3p5, .ernie, .ernieThinking,
+           .cohereCmd3, .cohereCmd4, .json:
         ResponseFormatStopTokenPolicy(
           includedStopTokens: [],
           requiredExtraEOSTokens: [],

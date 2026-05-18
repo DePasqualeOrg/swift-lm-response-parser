@@ -651,6 +651,7 @@ extension ResponseOutputText.Annotation: Codable {
     case fileCitation = "file_citation"
     case urlCitation = "url_citation"
     case filePath = "file_path"
+    case cohereToolResultCitation = "cohere:tool_result_citation"
   }
 
   private enum CodingKeys: String, CodingKey {
@@ -662,6 +663,8 @@ extension ResponseOutputText.Annotation: Codable {
     case title
     case startIndex = "start_index"
     case endIndex = "end_index"
+    case toolCallIndex = "tool_call_index"
+    case toolResultIndices = "tool_result_indices"
   }
 
   public init(from decoder: Decoder) throws {
@@ -686,6 +689,13 @@ extension ResponseOutputText.Annotation: Codable {
           fileId: container.decode(String.self, forKey: .fileId),
           index: container.decode(Int.self, forKey: .index),
         )
+      case .cohereToolResultCitation:
+        self = try .cohereToolResultCitation(
+          toolCallIndex: container.decode(Int.self, forKey: .toolCallIndex),
+          toolResultIndices: container.decode([Int].self, forKey: .toolResultIndices),
+          startIndex: container.decode(Int.self, forKey: .startIndex),
+          endIndex: container.decode(Int.self, forKey: .endIndex),
+        )
     }
   }
 
@@ -707,6 +717,12 @@ extension ResponseOutputText.Annotation: Codable {
         try container.encode(AnnotationType.filePath, forKey: .type)
         try container.encode(fileId, forKey: .fileId)
         try container.encode(index, forKey: .index)
+      case let .cohereToolResultCitation(toolCallIndex, toolResultIndices, startIndex, endIndex):
+        try container.encode(AnnotationType.cohereToolResultCitation, forKey: .type)
+        try container.encode(toolCallIndex, forKey: .toolCallIndex)
+        try container.encode(toolResultIndices, forKey: .toolResultIndices)
+        try container.encode(startIndex, forKey: .startIndex)
+        try container.encode(endIndex, forKey: .endIndex)
     }
   }
 }
@@ -767,6 +783,7 @@ extension ResponseStreamingEvent: Codable {
     case functionCallArgumentsDone
     case reasoningDelta
     case reasoningDone
+    case outputTextAnnotationAdded
 
     init(from decoder: Decoder) throws {
       let container = try decoder.singleValueContainer()
@@ -789,6 +806,7 @@ extension ResponseStreamingEvent: Codable {
         // both while continuing to encode the Open Responses discriminator.
         case "response.reasoning.delta", "response.reasoning_text.delta": self = .reasoningDelta
         case "response.reasoning.done", "response.reasoning_text.done": self = .reasoningDone
+        case "response.output_text.annotation.added": self = .outputTextAnnotationAdded
         default:
           throw DecodingError.dataCorruptedError(
             in: container,
@@ -830,6 +848,8 @@ extension ResponseStreamingEvent: Codable {
         self = try .reasoningDelta(ResponseReasoningDeltaEvent(from: decoder))
       case .reasoningDone:
         self = try .reasoningDone(ResponseReasoningDoneEvent(from: decoder))
+      case .outputTextAnnotationAdded:
+        self = try .outputTextAnnotationAdded(ResponseOutputTextAnnotationAddedEvent(from: decoder))
     }
   }
 
@@ -862,6 +882,8 @@ extension ResponseStreamingEvent: Codable {
       case let .reasoningDelta(value):
         try value.encode(to: encoder)
       case let .reasoningDone(value):
+        try value.encode(to: encoder)
+      case let .outputTextAnnotationAdded(value):
         try value.encode(to: encoder)
     }
   }
@@ -1283,6 +1305,42 @@ extension ResponseReasoningDoneEvent: Codable {
     try container.encode(outputIndex, forKey: .outputIndex)
     try container.encode(contentIndex, forKey: .contentIndex)
     try container.encode(text, forKey: .text)
+    try container.encode(sequenceNumber, forKey: .sequenceNumber)
+  }
+}
+
+extension ResponseOutputTextAnnotationAddedEvent: Codable {
+  private enum CodingKeys: String, CodingKey {
+    case type
+    case itemId = "item_id"
+    case outputIndex = "output_index"
+    case contentIndex = "content_index"
+    case annotationIndex = "annotation_index"
+    case annotation
+    case sequenceNumber = "sequence_number"
+  }
+
+  public init(from decoder: Decoder) throws {
+    try validateType("response.output_text.annotation.added", from: decoder)
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      itemId: container.decode(String.self, forKey: .itemId),
+      outputIndex: container.decode(Int.self, forKey: .outputIndex),
+      contentIndex: container.decode(Int.self, forKey: .contentIndex),
+      annotationIndex: container.decode(Int.self, forKey: .annotationIndex),
+      annotation: container.decode(ResponseOutputText.Annotation.self, forKey: .annotation),
+      sequenceNumber: container.decode(Int.self, forKey: .sequenceNumber),
+    )
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode("response.output_text.annotation.added", forKey: .type)
+    try container.encode(itemId, forKey: .itemId)
+    try container.encode(outputIndex, forKey: .outputIndex)
+    try container.encode(contentIndex, forKey: .contentIndex)
+    try container.encode(annotationIndex, forKey: .annotationIndex)
+    try container.encode(annotation, forKey: .annotation)
     try container.encode(sequenceNumber, forKey: .sequenceNumber)
   }
 }

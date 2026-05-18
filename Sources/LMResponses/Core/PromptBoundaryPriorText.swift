@@ -48,6 +48,13 @@ package extension ResponseFormat {
         // only an unpaired prompt-side `<tool_call>` implicitly ends reasoning.
         DelimitedReasoningBoundary.think(unpairedImplicitEnds: [.toolCall])
 
+      case .cohereCmd4:
+        // cmd4 chat templates can pre-inject `<|START_THINKING|>` via
+        // the `response_prefix` variable. The MLX bridge scans the
+        // rendered prompt for an unclosed pair so the parser starts
+        // inside the reasoning region.
+        DelimitedReasoningBoundary(start: "<|START_THINKING|>", end: "<|END_THINKING|>")
+
       default:
         nil
     }

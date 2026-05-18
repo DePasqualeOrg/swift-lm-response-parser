@@ -115,7 +115,7 @@ struct ChatTemplateRoundTripTests {
     let messages = openAIShapedMessages(callId: callId)
     _ = try tokenizer.applyChatTemplate(
       messages: messages,
-      chatTemplate: ChatTemplateArgument.name("tool_use"),
+      chatTemplate: ChatTemplateOverride.name("tool_use"),
       addGenerationPrompt: false,
       truncation: false,
       maxLength: nil,

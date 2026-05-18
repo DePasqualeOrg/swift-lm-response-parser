@@ -122,6 +122,7 @@ func eventKind(_ event: ResponseStreamingEvent) -> String {
     case .functionCallArgumentsDone: "functionCallArgumentsDone"
     case .reasoningDelta: "reasoningDelta"
     case .reasoningDone: "reasoningDone"
+    case .outputTextAnnotationAdded: "outputTextAnnotationAdded"
   }
 }
 

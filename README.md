@@ -66,7 +66,25 @@ MLX consumers depend on `LMResponsesMLX`:
 | Seed-OSS | Seed-OSS-36B-Instruct |
 | Step-3.5-Flash | Step-3.5-Flash |
 | ERNIE 4.5 | ERNIE-4.5, ERNIE-4.5-VL, ERNIE-4.5 Thinking |
+| Cohere Command | Command R7B, Command A Reasoning; Cohere2 Vision / MoE |
 | JSON fallback | Any model emitting bare JSON tool calls or without a native tool-call format |
+
+## Running tests
+
+Unit tests: `swift test`.
+
+Integration tests need MLX's Metal shader library, which only `xcodebuild` produces. Gated behind `LMRESPONSES_INTEGRATION_TESTS=1`:
+
+```bash
+env TEST_RUNNER_OS_ACTIVITY_MODE=disable LMRESPONSES_INTEGRATION_TESTS=1 \
+  xcodebuild test \
+  -scheme swift-lm-responses-Package \
+  -destination 'platform=macOS,arch=arm64' \
+  -skipMacroValidation \
+  -only-testing:LMResponsesMLXIntegrationTests
+```
+
+`TEST_RUNNER_OS_ACTIVITY_MODE=disable` silences framework log spam; `-skipMacroValidation` accepts swift-lm's `MLXLMCommonMacros`. In Xcode: `launchctl setenv LMRESPONSES_INTEGRATION_TESTS 1`, then Cmd-U.
 
 ## Planned improvements
 

@@ -181,6 +181,27 @@ extension ModelFixture {
     id: "mlx-community/Llama-3.2-1B-Instruct-4bit",
     modelType: "llama",
   )
+
+  /// Cohere Command R7B 12-2024, 4-bit. The only published Cohere2
+  /// checkpoint that's small enough for integration testing
+  /// (~4.5 GB on disk). Exercises the `.cohereCmd3` parser:
+  /// `<|START_THINKING|>` / `<|START_ACTION|>` / `<|START_RESPONSE|>`
+  /// marker state machine, JSON-array tool calls, and `<co>…</co: …>`
+  /// citations.
+  ///
+  /// **TODO: cmd4 path.** When a smaller `cohere2_vision` (Cohere2
+  /// Vision) checkpoint becomes available — or a 4-bit MLX conversion
+  /// of `CohereLabs/command-a-vision-07-2025` lands — add a sibling
+  /// fixture with `modelType: "cohere2_vision"` to exercise the
+  /// `.cohereCmd4` dispatch path end-to-end (start-in-reasoning via
+  /// `<|START_THINKING|>` prompt boundary, `<|START_TEXT|>` markers,
+  /// `Cohere2VisionForConditionalGeneration` arch). `cohere2_moe`
+  /// (`Cohere2MoeForCausalLM`) is registered in vLLM as a future
+  /// architecture; no checkpoint is published yet.
+  static let cohereR7B = ModelFixture(
+    id: "mlx-community/c4ai-command-r7b-12-2024-4bit",
+    modelType: "cohere2",
+  )
 }
 
 /// Loads a `ModelContainer` from `IntegrationTestModels` and reads

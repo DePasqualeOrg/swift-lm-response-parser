@@ -13,13 +13,10 @@ import Testing
 //
 // **Running these tests.** MLX's Metal shader library
 // (`default.metallib`) is built by Xcode-specific build phases, not by
-// `swift test`, so plain `swift test` cannot invoke MLX kernels even on
-// macOS. The suite is therefore gated behind the
-// `LMRESPONSES_INTEGRATION_TESTS=1` environment variable, and is
-// expected to be driven through Xcode (Cmd-U or
-// `xcodebuild test -scheme LMResponsesMLX`) where the metallib
-// gets bundled correctly. swift-tokenizers' Benchmarks target uses the
-// same gate-then-run-from-Xcode pattern.
+// `swift test`, so plain `swift test` cannot invoke MLX kernels. The
+// suite is gated behind `LMRESPONSES_INTEGRATION_TESTS=1` and driven
+// through Xcode (Cmd-U) or `xcodebuild`. See the "Running tests"
+// section in the project README for the full invocation.
 //
 // First-run cost: ~400 MB download for `mlx-community/Qwen3-0.6B-4bit`,
 // stored in the standard Hugging Face cache (`~/.cache/huggingface/hub`)

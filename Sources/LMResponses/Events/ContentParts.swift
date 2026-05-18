@@ -22,16 +22,34 @@ public struct ResponseOutputText: Sendable, Equatable {
   /// The text content.
   public var text: String
 
-  /// Annotations on the text. We do not currently emit any, but the field
-  /// is structurally present so the spec shape is preserved.
+  /// Annotations on the text. Cohere's grounded-answer parser emits one
+  /// ``Annotation/cohereToolResultCitation(toolCallIndex:toolResultIndices:startIndex:endIndex:)``
+  /// per `<co>…</co: …>` citation span; the spec-defined variants
+  /// (`file_citation`, `url_citation`, `file_path`) are reserved for
+  /// hosted-product surfaces that do not currently produce output here.
   public var annotations: [Annotation]
 
-  /// Annotation variants the spec defines. We don't synthesize any of these
-  /// from local model output, so the array stays empty in practice.
+  /// Annotation variants the spec defines, plus the Cohere extension
+  /// declared via the spec's `provider:slug` extension policy. The
+  /// spec-native variants stay empty in practice; the Cohere variant is
+  /// populated by the Cohere parser.
   public enum Annotation: Sendable, Equatable {
     case fileCitation(fileId: String, filename: String, index: Int)
     case urlCitation(url: String, title: String?, startIndex: Int, endIndex: Int)
     case filePath(fileId: String, index: Int)
+    /// Cohere grounded-answer citation. Mirrors melody's
+    /// `FilterCitation` / `Source` decomposition: one annotation per
+    /// `(tool_call_index, tool_result_indices)` group, with character
+    /// indices given in UTF-16 code units to match OpenAI's
+    /// ``Annotation/urlCitation(url:title:startIndex:endIndex:)``
+    /// convention. Discriminator string is
+    /// `cohere:tool_result_citation`.
+    case cohereToolResultCitation(
+      toolCallIndex: Int,
+      toolResultIndices: [Int],
+      startIndex: Int,
+      endIndex: Int,
+    )
   }
 
   public init(text: String, annotations: [Annotation] = []) {

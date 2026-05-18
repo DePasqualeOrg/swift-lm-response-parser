@@ -50,6 +50,8 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
   case reasoningDelta(ResponseReasoningDeltaEvent)
   case reasoningDone(ResponseReasoningDoneEvent)
 
+  case outputTextAnnotationAdded(ResponseOutputTextAnnotationAddedEvent)
+
   /// Read or write the event's `sequence_number` field. The parser emits
   /// events with parser-local sequence numbers; the emitter substitutes
   /// response-scoped numbers (zero-based, monotonically increasing across
@@ -72,6 +74,7 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
         case let .functionCallArgumentsDone(e): e.sequenceNumber
         case let .reasoningDelta(e): e.sequenceNumber
         case let .reasoningDone(e): e.sequenceNumber
+        case let .outputTextAnnotationAdded(e): e.sequenceNumber
       }
     }
     set {
@@ -104,6 +107,8 @@ public enum ResponseStreamingEvent: Sendable, Equatable {
           e.sequenceNumber = newValue; self = .reasoningDelta(e)
         case var .reasoningDone(e):
           e.sequenceNumber = newValue; self = .reasoningDone(e)
+        case var .outputTextAnnotationAdded(e):
+          e.sequenceNumber = newValue; self = .outputTextAnnotationAdded(e)
       }
     }
   }
@@ -376,6 +381,38 @@ public struct ResponseReasoningDoneEvent: Sendable, Equatable {
     self.outputIndex = outputIndex
     self.contentIndex = contentIndex
     self.text = text
+    self.sequenceNumber = sequenceNumber
+  }
+}
+
+// MARK: Output-text annotation events
+
+/// Inserted into the event stream when a new annotation is attached to a
+/// streaming `output_text` content part. The terminal snapshot's
+/// annotation list is also rebuilt from the surrounding
+/// `output_item.done` payload, so this event is the streaming-side notice
+/// for consumers that mirror the spec event surface.
+public struct ResponseOutputTextAnnotationAddedEvent: Sendable, Equatable {
+  public var itemId: String
+  public var outputIndex: Int
+  public var contentIndex: Int
+  public var annotationIndex: Int
+  public var annotation: ResponseOutputText.Annotation
+  public var sequenceNumber: Int
+
+  public init(
+    itemId: String,
+    outputIndex: Int,
+    contentIndex: Int,
+    annotationIndex: Int,
+    annotation: ResponseOutputText.Annotation,
+    sequenceNumber: Int,
+  ) {
+    self.itemId = itemId
+    self.outputIndex = outputIndex
+    self.contentIndex = contentIndex
+    self.annotationIndex = annotationIndex
+    self.annotation = annotation
     self.sequenceNumber = sequenceNumber
   }
 }

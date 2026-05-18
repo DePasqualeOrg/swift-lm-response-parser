@@ -305,6 +305,9 @@ private func rebaseOutputIndex(_ event: ResponseStreamingEvent, by offset: Int) 
     case var .reasoningDone(e):
       e.outputIndex += offset
       return .reasoningDone(e)
+    case var .outputTextAnnotationAdded(e):
+      e.outputIndex += offset
+      return .outputTextAnnotationAdded(e)
   }
 }
 
@@ -322,5 +325,6 @@ private func outputIndex(of event: ResponseStreamingEvent) -> Int? {
     case let .functionCallArgumentsDone(e): e.outputIndex
     case let .reasoningDelta(e): e.outputIndex
     case let .reasoningDone(e): e.outputIndex
+    case let .outputTextAnnotationAdded(e): e.outputIndex
   }
 }

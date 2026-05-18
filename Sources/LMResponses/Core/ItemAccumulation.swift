@@ -107,6 +107,15 @@ private func applyEvent(_ event: ResponseStreamingEvent, to items: inout [Respon
       guard e.outputIndex < items.count else { return }
       appendArguments(e.delta, to: &items[e.outputIndex])
 
+    case let .outputTextAnnotationAdded(e):
+      guard e.outputIndex < items.count else { return }
+      insertAnnotation(
+        e.annotation,
+        atIndex: e.annotationIndex,
+        contentIndex: e.contentIndex,
+        to: &items[e.outputIndex],
+      )
+
     case .contentPartDone, .outputTextDone, .reasoningDone,
          .functionCallArgumentsDone, .responseCreated, .responseInProgress, .responseCompleted,
          .responseIncomplete:
@@ -186,4 +195,18 @@ private func appendArguments(_ delta: String, to item: inout ResponseOutputItem)
   guard case var .functionCall(f) = item else { return }
   f.arguments += delta
   item = .functionCall(f)
+}
+
+private func insertAnnotation(
+  _ annotation: ResponseOutputText.Annotation,
+  atIndex annotationIndex: Int,
+  contentIndex: Int,
+  to item: inout ResponseOutputItem,
+) {
+  guard case var .message(m) = item, contentIndex < m.content.count else { return }
+  guard case var .outputText(t) = m.content[contentIndex] else { return }
+  let target = Swift.max(0, Swift.min(annotationIndex, t.annotations.count))
+  t.annotations.insert(annotation, at: target)
+  m.content[contentIndex] = .outputText(t)
+  item = .message(m)
 }
