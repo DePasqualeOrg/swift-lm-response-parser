@@ -31,6 +31,10 @@ public final class StreamingDetokenizer {
   private var ids: [Int]
   private var prefix: String
   private var prefixIndex: Int
+  /// Set on a successful ``consume(_:)``. ``flush()`` keys off this to
+  /// suppress seed-only emission — `prefix` alone can't distinguish
+  /// "no consume yet" from "consumed but seed decoded to U+FFFD".
+  private var hasConsumed: Bool
 
   /// Creates an empty stream over `tokenizer`.
   ///
@@ -63,6 +67,7 @@ public final class StreamingDetokenizer {
     ids = initialTokenIds
     prefix = ""
     prefixIndex = 0
+    hasConsumed = false
   }
 
   /// Consumes a token and returns any complete chunk it produced.
@@ -101,6 +106,7 @@ public final class StreamingDetokenizer {
       ids = workingIds
       prefix = workingPrefix
       prefixIndex = workingPrefixIndex
+      hasConsumed = true
       return nil
     }
 
@@ -126,6 +132,63 @@ public final class StreamingDetokenizer {
     ids = trimmed
     prefix = refreshed
     prefixIndex = trimmed.count
+    hasConsumed = true
+    return newChunk
+  }
+
+  /// Emit any text the buffer is still holding back because the last
+  /// consumed token's decode ended mid-multibyte-UTF8 scalar.
+  ///
+  /// Call once at end-of-stream when no more tokens will arrive. The
+  /// returned string includes the Unicode replacement character
+  /// (U+FFFD) wherever a partial scalar terminates — better than
+  /// silently dropping the bytes. Returns `nil` if there is nothing
+  /// buffered.
+  ///
+  /// On any throw, internal state is unchanged. On success, the
+  /// detokenizer is reset: the buffer is empty and subsequent
+  /// ``consume(_:)-(Int)`` calls behave as if starting fresh.
+  public func flush() throws -> String? {
+    guard !ids.isEmpty else { return nil }
+
+    // Seed-only buffer represents bytes the caller already displayed;
+    // emitting it would leak the prompt tail as generated output.
+    guard hasConsumed else {
+      ids = []
+      prefix = ""
+      prefixIndex = 0
+      hasConsumed = false
+      return nil
+    }
+
+    let string = try tokenizer.decode(
+      tokenIds: ids,
+      skipSpecialTokens: skipSpecialTokens,
+    )
+
+    guard string.utf8.count > prefix.utf8.count else {
+      // Nothing past the already-emitted prefix — reset and return nil.
+      ids = []
+      prefix = ""
+      prefixIndex = 0
+      hasConsumed = false
+      return nil
+    }
+    guard string.utf8.starts(with: prefix.utf8) else {
+      throw StreamingDetokenizerError.invalidStreamingPrefix(
+        tokenId: ids.last ?? -1,
+        expectedPrefix: prefix,
+        actualString: string,
+      )
+    }
+    let newChunk = String(
+      decoding: string.utf8.dropFirst(prefix.utf8.count),
+      as: UTF8.self,
+    )
+    ids = []
+    prefix = ""
+    prefixIndex = 0
+    hasConsumed = false
     return newChunk
   }
 

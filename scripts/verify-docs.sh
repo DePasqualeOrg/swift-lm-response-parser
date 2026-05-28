@@ -34,6 +34,14 @@ if [ -z "$TARGETS" ]; then
     exit 1
 fi
 
+# Dependency targets that this package's doc comments link into. LMResponsesLlama
+# documents the engine it adapts, so its symbols carry absolute links like
+# ``/Llama/LlamaMtmdContext``. Those resolve only when Llama's symbol graph is
+# part of the combined-documentation build, so include it as an extra target.
+EXTRA_TARGETS="Llama"
+TARGETS="$TARGETS
+$EXTRA_TARGETS"
+
 # Build docc from the swift-docc main-branch checkout pulled via Package.swift.
 swift package resolve > /dev/null
 SWIFT_DOCC_DIR=$(find .build/checkouts -maxdepth 1 -type d -name swift-docc -print -quit)

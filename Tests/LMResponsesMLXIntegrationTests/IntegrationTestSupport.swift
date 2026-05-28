@@ -5,7 +5,7 @@ import HFAPI
 import LMResponses
 import LMResponsesMLX
 import MLXLMCommon
-@preconcurrency import Tokenizers
+import Tokenizers
 
 // Integration-test infrastructure for `LMResponsesMLX`. Mirrors the
 // pattern used by the `LMResponsesMLXTests` target's swift-tokenizers

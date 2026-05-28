@@ -22,7 +22,7 @@ extension MyTokenizer: ResponseTokenizer {}
 
 ``ResponseOutputItem`` is a structured view of an assistant turn that's stable to render in a UI, pattern-match on for tool dispatch, or persist for replay. The enum has four cases:
 
-- ``ResponseOutputItem/message(_:)``: assistant text with optional refusal parts. Use `.text` for the joined text of all `outputText` parts.
+- ``ResponseOutputItem/message(_:)``: assistant text with optional refusal parts. Use `.text` for the joined text of all `outputText` parts, or ``Response/outputText`` to join text across every message item in a whole ``Response``.
 - ``ResponseOutputItem/functionCall(_:)``: a tool invocation. Carries `name`, `callId`, and `arguments` as a JSON string. Use ``ResponseFunctionToolCall/decodedArguments(as:decoder:)`` to decode into a `Decodable` type.
 - ``ResponseOutputItem/reasoning(_:)``: chain of thought from reasoning models. Use `.text` for the joined reasoning text.
 - ``ResponseOutputItem/functionCallOutput(_:)``: the result of a tool call, paired to its `functionCall` by `callId`. The output can be a string or typed text/image/file content via ``ResponseFunctionCallOutput/Output``.

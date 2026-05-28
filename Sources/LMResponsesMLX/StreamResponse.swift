@@ -98,6 +98,41 @@ public func streamResponseItems(
   )
 }
 
+/// Stream plain assistant text from one MLX generation pass – the
+/// text-delta projection of
+/// ``streamResponseEvents(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``.
+public func streamText(
+  input: LMInput,
+  cache: [KVCache]? = nil,
+  parameters: GenerateParameters,
+  context: ModelContext,
+  modelType: String? = nil,
+  modelConfig: [String: any Sendable]? = nil,
+  format: ResponseFormat? = nil,
+  config: ResponseStreamConfig,
+  priorOutput: String? = nil,
+  wiredMemoryTicket: WiredMemoryTicket? = nil,
+) throws -> ResponseStreamHandle<String> {
+  try runSinglePass(
+    input: input,
+    cache: cache,
+    parameters: parameters,
+    context: context,
+    modelType: modelType,
+    modelConfig: modelConfig,
+    format: format,
+    config: config,
+    priorOutput: priorOutput,
+    wiredMemoryTicket: wiredMemoryTicket,
+    mapStream: { events in
+      events.compactMap { event in
+        if case let .outputTextDelta(e) = event { return e.delta }
+        return nil
+      }
+    },
+  )
+}
+
 public extension ModelContainer {
   /// `ModelContainer`-based variant of
   /// ``streamResponseEvents(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``.
@@ -151,6 +186,33 @@ public extension ModelContainer {
     let inputBox = SendableBox(input)
     let context = await perform { SendableBox($0) }.consume()
     return try LMResponsesMLX.streamResponseItems(
+      input: inputBox.consume(),
+      parameters: parameters,
+      context: context,
+      modelType: modelType,
+      modelConfig: modelConfig,
+      format: format,
+      config: config,
+      priorOutput: priorOutput,
+      wiredMemoryTicket: wiredMemoryTicket,
+    )
+  }
+
+  /// `ModelContainer`-based variant of
+  /// ``streamText(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``.
+  func streamText(
+    input: consuming sending LMInput,
+    parameters: GenerateParameters,
+    modelType: String? = nil,
+    modelConfig: [String: any Sendable]? = nil,
+    format: ResponseFormat? = nil,
+    config: ResponseStreamConfig,
+    priorOutput: String? = nil,
+    wiredMemoryTicket: WiredMemoryTicket? = nil,
+  ) async throws -> ResponseStreamHandle<String> {
+    let inputBox = SendableBox(input)
+    let context = await perform { SendableBox($0) }.consume()
+    return try LMResponsesMLX.streamText(
       input: inputBox.consume(),
       parameters: parameters,
       context: context,

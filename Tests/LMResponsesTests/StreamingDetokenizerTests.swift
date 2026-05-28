@@ -331,4 +331,61 @@ struct StreamingDetokenizerSuite {
       #expect(actualString == "xyzlonger")
     }
   }
+
+  @Test
+  func `flush emits buffered partial scalar as replacement character`() throws {
+    // 🌍 is four UTF-8 bytes split across tokens 10..13. Consume only
+    // the first two — `consume` will buffer them silently because the
+    // decode ends in U+FFFD (partial scalar). `flush` then emits them
+    // as a replacement-char chunk instead of dropping them.
+    let stream = Self.fragmentedEmojiTokenizer.streamingDetokenizer()
+    #expect(try stream.consume(10) == nil)
+    #expect(try stream.consume(11) == nil)
+
+    let flushed = try stream.flush()
+    #expect(flushed != nil)
+    // The buffered bytes are [0xF0, 0x9F] — invalid UTF-8 on their own,
+    // so the decoder produces U+FFFD.
+    #expect(flushed?.contains("\u{fffd}") == true)
+  }
+
+  @Test
+  func `flush returns nil when buffer empty`() throws {
+    let stream = Self.asciiTokenizer.streamingDetokenizer()
+    #expect(try stream.flush() == nil)
+  }
+
+  @Test
+  func `flush resets state so subsequent consume starts fresh`() throws {
+    let stream = Self.fragmentedEmojiTokenizer.streamingDetokenizer()
+    _ = try stream.consume(10)
+    _ = try stream.consume(11)
+    _ = try stream.flush()
+
+    // After flush, the buffer is clear — consuming "!" (token 20) emits
+    // it as a normal chunk without any leftover replacement char.
+    let chunk = try stream.consume(20)
+    #expect(chunk == "!")
+  }
+
+  @Test
+  func `flush on seeded stream with no consumed tokens returns nil`() throws {
+    // Seed only — no generated token ever consumed. `flush` must not
+    // emit the seed (which represents prompt tail bytes the caller
+    // already displayed) as a chunk.
+    let stream = Self.asciiTokenizer.streamingDetokenizer(
+      initialTokenIds: [1, 2, 3, 3, 4], // "Hello"
+    )
+    #expect(try stream.flush() == nil)
+  }
+
+  @Test
+  func `flush on seed ending in partial scalar still returns nil`() throws {
+    // Regression: seed that decodes to a trailing U+FFFD must not leak
+    // as a generated chunk just because the prefix is still empty.
+    let stream = Self.fragmentedEmojiTokenizer.streamingDetokenizer(
+      initialTokenIds: [10, 11], // first two bytes of 🌍
+    )
+    #expect(try stream.flush() == nil)
+  }
 }

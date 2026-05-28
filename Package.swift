@@ -36,18 +36,25 @@ var packageDependencies: [Package.Dependency] = [
 ]
 
 if isApplePlatform {
-  packageDependencies.append(
+  packageDependencies.append(contentsOf: [
     .package(
       url: "https://github.com/DePasqualeOrg/swift-lm.git",
       branch: "main",
     ),
-  )
+    // swift-llama provides the Llama engine + Cllama artifactbundle.
+    // Track main until swift-llama tags a release; pin to a version then.
+    .package(url: "https://github.com/DePasqualeOrg/swift-llama.git", branch: "main"),
+    // swift-tokenizers is a runtime dep of LMResponsesLlama (the public
+    // `ChatTemplate` renderer). MLX bridges it transitively via
+    // MLXLMCommon, but the llama bridge needs it directly. Track main
+    // until the ChatTemplate API ships in a tagged release.
+    .package(url: "https://github.com/DePasqualeOrg/swift-tokenizers.git", branch: "main"),
+  ])
 }
 
 if isApplePlatform, integrationTestsEnabled {
   packageDependencies.append(contentsOf: [
     .package(url: "https://github.com/DePasqualeOrg/swift-hf-api.git", from: "0.2.2"),
-    .package(url: "https://github.com/DePasqualeOrg/swift-tokenizers.git", from: "0.4.2"),
   ])
 }
 
@@ -59,12 +66,16 @@ var packageProducts: [Product] = [
 ]
 
 if isApplePlatform {
-  packageProducts.append(
+  packageProducts.append(contentsOf: [
     .library(
       name: "LMResponsesMLX",
       targets: ["LMResponsesMLX"],
     ),
-  )
+    .library(
+      name: "LMResponsesLlama",
+      targets: ["LMResponsesLlama"],
+    ),
+  ])
 }
 
 var packageTargets: [Target] = [
@@ -97,11 +108,25 @@ if isApplePlatform {
       ],
       path: "Tests/LMResponsesMLXTests",
     ),
+    .target(
+      name: "LMResponsesLlama",
+      dependencies: [
+        "LMResponses",
+        .product(name: "Llama", package: "swift-llama"),
+        .product(name: "Tokenizers", package: "swift-tokenizers"),
+      ],
+      path: "Sources/LMResponsesLlama",
+    ),
+    .testTarget(
+      name: "LMResponsesLlamaTests",
+      dependencies: ["LMResponsesLlama"],
+      path: "Tests/LMResponsesLlamaTests",
+    ),
   ])
 }
 
 if isApplePlatform, integrationTestsEnabled {
-  packageTargets.append(
+  packageTargets.append(contentsOf: [
     .testTarget(
       name: "LMResponsesMLXIntegrationTests",
       dependencies: [
@@ -113,7 +138,16 @@ if isApplePlatform, integrationTestsEnabled {
       ],
       path: "Tests/LMResponsesMLXIntegrationTests",
     ),
-  )
+    .testTarget(
+      name: "LMResponsesLlamaIntegrationTests",
+      dependencies: [
+        "LMResponsesLlama",
+        .product(name: "Tokenizers", package: "swift-tokenizers"),
+        .product(name: "HFAPI", package: "swift-hf-api"),
+      ],
+      path: "Tests/LMResponsesLlamaIntegrationTests",
+    ),
+  ])
 }
 
 let package = Package(

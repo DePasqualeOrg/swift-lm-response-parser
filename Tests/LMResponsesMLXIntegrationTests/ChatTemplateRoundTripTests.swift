@@ -3,7 +3,7 @@
 import Foundation
 import LMResponses
 import Testing
-@preconcurrency import Tokenizers
+import Tokenizers
 
 /// Round-trip tests that render a synthesized assistant→tool history
 /// through the model's actual HuggingFace chat template via

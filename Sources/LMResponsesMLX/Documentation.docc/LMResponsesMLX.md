@@ -21,6 +21,7 @@ Bridge `LMResponses` to MLX Swift LM.
 ### Streaming helpers
 
 - ``ResponseStreamHandle``
+- ``streamText(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``
 - ``streamResponseEvents(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``
 - ``streamResponseItems(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``
 

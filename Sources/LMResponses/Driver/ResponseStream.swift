@@ -252,6 +252,22 @@ public final class ResponseStream {
     cachedInputTokens: Int = 0,
     reasoningOutputTokens: Int = 0,
   ) -> [ResponseStreamingEvent] {
+    // Flush any bytes the detokenizer was holding back (last token
+    // ended mid-multibyte-UTF8 scalar) so the partial bytes appear as
+    // a replacement-char chunk instead of being silently dropped.
+    var flushedEvents: [ResponseStreamingEvent] = []
+    do {
+      if let leftover = try detokenizer.flush(), !leftover.isEmpty {
+        flushedEvents = emitter.process(text: leftover, tokenIds: pendingTokenIds)
+        pendingTokenIds.removeAll(keepingCapacity: true)
+        accumulator.ingest(flushedEvents)
+      }
+    } catch {
+      Self.logError(
+        "Detokenizer flush failed; dropping trailing bytes: \(error.localizedDescription)",
+      )
+    }
+
     let info = FinishInfo(
       finishReason: finishReason,
       inputTokens: inputTokens,
@@ -266,6 +282,6 @@ public final class ResponseStream {
         finalResponse = response
       }
     }
-    return events
+    return flushedEvents + events
   }
 }

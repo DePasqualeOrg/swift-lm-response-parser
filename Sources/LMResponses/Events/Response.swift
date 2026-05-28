@@ -146,4 +146,13 @@ public struct Response: Sendable, Equatable {
     self.topP = topP
     self.maxOutputTokens = maxOutputTokens
   }
+
+  /// Concatenated assistant text across all message items – the OpenAI
+  /// `output_text` convenience. Excludes reasoning and tool-call items.
+  public var outputText: String {
+    output.compactMap { item in
+      if case let .message(message) = item { return message.text }
+      return nil
+    }.joined()
+  }
 }

@@ -6,7 +6,7 @@ Stream Open Responses from an MLX Swift LM model.
 
 `LMResponsesMLX` offers two layers of integration:
 
-- ``ResponseChatSession``: multi-turn session with built-in tool dispatch, mirrors `MLXLMCommon.ChatSession` but yields ``/LMResponses/ResponseOutputItem`` snapshots or ``/LMResponses/ResponseStreamingEvent`` values instead of plain strings.
+- ``ResponseChatSession``: multi-turn session with built-in tool dispatch, mirrors `MLXLMCommon.ChatSession`. Stream plain text with `streamText(prompt:)`, get the whole reply with `respond(to:)` and ``/LMResponses/Response/outputText``, or take typed ``/LMResponses/ResponseOutputItem`` snapshots / ``/LMResponses/ResponseStreamingEvent`` values for richer output.
 - ``streamResponseEvents(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)`` and ``streamResponseItems(input:cache:parameters:context:modelType:modelConfig:format:config:priorOutput:wiredMemoryTicket:)``: lower-level helpers for callers that own cache lifecycle directly.
 
 ## ResponseChatSession
@@ -34,12 +34,12 @@ let session = ResponseChatSession(
     }
 )
 
-for try await items in session.streamResponseItems(prompt: "What's the weather in Paris?") {
-    updateUI(items)
+for try await chunk in session.streamText(prompt: "What's the weather in Paris?") {
+    print(chunk, terminator: "")
 }
 ```
 
-`streamResponseEvents(prompt:)` is also available for the SSE-proxy/[Open Responses](https://www.openresponses.org/) case, with the same lifecycle.
+`streamText(prompt:)` yields plain text chunks. For typed UI updates, `streamResponseItems(prompt:)` yields cumulative ``/LMResponses/ResponseOutputItem`` snapshots; `streamResponseEvents(prompt:)` yields ``/LMResponses/ResponseStreamingEvent`` values for the SSE-proxy/[Open Responses](https://www.openresponses.org/) case. To get a whole turn at once, use `respond(to:)` and read ``/LMResponses/Response/outputText``. All share the same one-turn lifecycle.
 
 ## Tool validation and recovery
 

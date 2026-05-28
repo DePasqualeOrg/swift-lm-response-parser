@@ -289,12 +289,12 @@ public final class ResponseChatSession {
   /// `MLXLMCommon.ChatSession.streamResponse(to:role:images:videos:)` uses.
   public func streamResponseEvents(
     prompt: String,
-    role: Chat.Message.Role = .user,
+    role: Role = .user,
     images: consuming [UserInput.Image],
     videos: consuming [UserInput.Video],
     config: ResponseStreamConfig? = nil,
   ) -> AsyncThrowingStream<ResponseStreamingEvent, Error> {
-    runTurn(prompt: prompt, role: role, images: images, videos: videos, config: config) { events in
+    runTurn(prompt: prompt, role: Chat.Message.Role(rawValue: role.rawValue) ?? .user, images: images, videos: videos, config: config) { events in
       events
     }
   }
@@ -324,13 +324,13 @@ public final class ResponseChatSession {
   /// see the singular convenience overload below.
   public func streamResponseItems(
     prompt: String,
-    role: Chat.Message.Role = .user,
+    role: Role = .user,
     images: consuming [UserInput.Image],
     videos: consuming [UserInput.Video],
     config: ResponseStreamConfig? = nil,
   ) -> AsyncThrowingStream<[ResponseOutputItem], Error> {
     let accumulator = TurnItemsBox()
-    return runTurn(prompt: prompt, role: role, images: images, videos: videos, config: config) { events in
+    return runTurn(prompt: prompt, role: Chat.Message.Role(rawValue: role.rawValue) ?? .user, images: images, videos: videos, config: config) { events in
       accumulator.ingest(events)
       return [accumulator.snapshot]
     }
@@ -352,6 +352,43 @@ public final class ResponseChatSession {
     )
   }
 
+  /// Stream the assistant's reply as plain text chunks, filtering out
+  /// reasoning, tool calls, and lifecycle events. Use
+  /// ``streamResponseEvents(prompt:role:images:videos:config:)`` for the
+  /// full typed event stream, or ``respond(to:role:images:videos:config:)``
+  /// then `.outputText` for the whole reply at once. `images:` and
+  /// `videos:` are required; see the singular convenience overload below.
+  public func streamText(
+    prompt: String,
+    role: Role = .user,
+    images: consuming [UserInput.Image],
+    videos: consuming [UserInput.Video],
+    config: ResponseStreamConfig? = nil,
+  ) -> AsyncThrowingStream<String, Error> {
+    runTurn(prompt: prompt, role: Chat.Message.Role(rawValue: role.rawValue) ?? .user, images: images, videos: videos, config: config) { events in
+      events.compactMap { event in
+        if case let .outputTextDelta(e) = event { return e.delta }
+        return nil
+      }
+    }
+  }
+
+  /// Single-image / single-video convenience for
+  /// ``streamText(prompt:role:images:videos:config:)``.
+  public func streamText(
+    prompt: String,
+    image: UserInput.Image? = nil,
+    video: UserInput.Video? = nil,
+    config: ResponseStreamConfig? = nil,
+  ) -> AsyncThrowingStream<String, Error> {
+    streamText(
+      prompt: prompt,
+      images: image.map { [$0] } ?? [],
+      videos: video.map { [$0] } ?? [],
+      config: config,
+    )
+  }
+
   /// Run one assistant turn end-to-end and return its terminal
   /// ``/LMResponses/Response``. Non-streaming convenience – drains
   /// ``streamResponseEvents(prompt:role:images:videos:config:)`` to
@@ -365,7 +402,7 @@ public final class ResponseChatSession {
   /// no terminal response was produced.
   public func respond(
     to prompt: String,
-    role: Chat.Message.Role = .user,
+    role: Role = .user,
     images: consuming [UserInput.Image] = [],
     videos: consuming [UserInput.Video] = [],
     config: ResponseStreamConfig? = nil,
