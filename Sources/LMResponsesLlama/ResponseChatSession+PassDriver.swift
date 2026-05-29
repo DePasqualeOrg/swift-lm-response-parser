@@ -104,7 +104,7 @@ func runOnePass<Element: Sendable>(
   let resolvedFormat = format
     ?? ResponseFormat.infer(
       modelName: modelName,
-      modelType: context.model.architecture ?? "",
+      modelType: ResponseFormat.modelType(forGGUFArchitecture: context.model.architecture ?? ""),
       modelConfig: ["vocab_size": Int(context.model.vocabSize)],
     )
     ?? .json

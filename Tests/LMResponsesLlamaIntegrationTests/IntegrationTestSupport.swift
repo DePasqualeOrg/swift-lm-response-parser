@@ -25,11 +25,73 @@ struct LlamaTestFixture {
   let ggufFilename: String
   let modelName: String
 
-  /// Qwen3 0.6B Q4_K_M. ~400 MB GGUF.
+  /// Qwen3 0.6B Q4_K_M. ~400 MB GGUF. Exercises the `.qwen` parser
+  /// (Hermes-style tool calls + `<think>` reasoning) on the text and
+  /// thinking-off paths.
   static let qwen3_0_6b = LlamaTestFixture(
     ggufRepoID: "unsloth/Qwen3-0.6B-GGUF",
     ggufFilename: "Qwen3-0.6B-Q4_K_M.gguf",
     modelName: "Qwen3-0.6B",
+  )
+
+  /// Qwen3 4B, 4-bit Q4_K_M (bartowski's imatrix-calibrated GGUF — best
+  /// quality-per-bit at 4-bit, with the official chat template that drives
+  /// `enable_thinking` copied through faithfully). ~2.5 GB. Used for the
+  /// `.qwen` thinking-on reasoning test: the 0.6B model `<think>`s past any
+  /// reasonable token budget on a trivial prompt, whereas 4B closes its
+  /// reasoning and emits a final message, so the test can assert the full
+  /// reasoning → message sequence rather than just reasoning presence.
+  static let qwen3_4b = LlamaTestFixture(
+    ggufRepoID: "bartowski/Qwen_Qwen3-4B-GGUF",
+    ggufFilename: "Qwen_Qwen3-4B-Q4_K_M.gguf",
+    modelName: "Qwen3-4B",
+  )
+
+  /// Llama 3.2 1B Instruct, 4-bit Q4_K_M (bartowski's imatrix GGUF). ~0.8 GB.
+  /// Exercises the `.llama3` parser (inline-JSON tool calls, EOT terminator).
+  /// Meta ships no official GGUF, so bartowski's imatrix build — best
+  /// quality-per-bit at 4-bit, official template embedded — is the source.
+  static let llama3_2_1b = LlamaTestFixture(
+    ggufRepoID: "bartowski/Llama-3.2-1B-Instruct-GGUF",
+    ggufFilename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
+    modelName: "Llama-3.2-1B-Instruct",
+  )
+
+  /// Gemma 4 E2B Instruct Q4_K_M language GGUF (the mmproj is ignored —
+  /// this fixture drives the text path only). Exercises the `.gemma4`
+  /// parser (multi-token thinking markers). Shares the repo + weights file
+  /// with ``LlamaVLMTestFixture/gemma4_e2b``.
+  static let gemma4_e2b = LlamaTestFixture(
+    ggufRepoID: "unsloth/gemma-4-E2B-it-GGUF",
+    ggufFilename: "gemma-4-E2B-it-Q4_K_M.gguf",
+    modelName: "gemma-4-E2B-it",
+  )
+
+  /// DeepSeek-R1-Distill-Qwen 1.5B, 4-bit Q4_K_M (bartowski's imatrix GGUF —
+  /// deepseek-ai ships no GGUF; best quality-per-bit at 4-bit, official
+  /// template embedded). ~1.1 GB. Exercises the `.deepseekR1` parser
+  /// (`<think>` reasoning preamble). Stands in for the DeepSeek family: the
+  /// genuine DeepSeek-V3 / V3.1 wire formats (`.deepseekV3` / `.deepseekV31`)
+  /// have no checkpoint small enough for integration testing — the smallest
+  /// published V3 GGUFs are the full 671B model. The R1 distill is the
+  /// closest small representative; pin `format: .deepseekV3` explicitly in a
+  /// future test if a small V3-format checkpoint ever lands.
+  static let deepseekR1_distill_qwen_1_5b = LlamaTestFixture(
+    ggufRepoID: "bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
+    ggufFilename: "DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
+    modelName: "DeepSeek-R1-Distill-Qwen-1.5B",
+  )
+
+  /// gpt-oss 20B, native MXFP4 GGUF. ~11.5 GB — the smallest Harmony
+  /// checkpoint that exists (the only models on the `.harmony` reserved-token
+  /// protocol are gpt-oss-20b and gpt-oss-120b). Running it requires 24 GB of
+  /// RAM or more, so the Harmony parser-family test is disabled by default;
+  /// it's the only way to exercise the Harmony included-stop-token path
+  /// (`<|call|>` / `<|return|>`) end-to-end on hardware that can load it.
+  static let gptOss20b = LlamaTestFixture(
+    ggufRepoID: "ggml-org/gpt-oss-20b-GGUF",
+    ggufFilename: "gpt-oss-20b-mxfp4.gguf",
+    modelName: "gpt-oss-20b",
   )
 }
 

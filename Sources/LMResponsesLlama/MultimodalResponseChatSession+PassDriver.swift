@@ -32,7 +32,7 @@ func runOneMtmdPass<Element: Sendable>(
   let resolvedFormat = format
     ?? ResponseFormat.infer(
       modelName: modelName,
-      modelType: model.architecture ?? "",
+      modelType: ResponseFormat.modelType(forGGUFArchitecture: model.architecture ?? ""),
       modelConfig: ["vocab_size": Int(model.vocabSize)],
     )
     ?? .json

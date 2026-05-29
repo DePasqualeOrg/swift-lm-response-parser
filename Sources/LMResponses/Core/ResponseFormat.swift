@@ -474,6 +474,37 @@ extension ResponseFormat {
       .format
   }
 
+  /// Translates a GGUF `general.architecture` (llama.cpp's own arch enum) into the Hugging Face
+  /// `model_type` namespace this resolver was built for (the sglang/vLLM port). The llama backend
+  /// should pass `modelType:` through this; the MLX backend already supplies HF `model_type`.
+  ///
+  /// The two namespaces mostly agree, or differ only in ways that still resolve correctly via family
+  /// prefixes (GGUF `qwen2moe` → `qwen2` → `.qwen`, matching HF `qwen2_moe`). Only the *format-
+  /// changing* divergences are mapped: Qwen variants that use the XML function format but whose GGUF
+  /// arch strips/concatenates the separator (`qwen35`, `qwen35moe`, `qwen3next`) and would otherwise
+  /// fall through the `qwen3` prefix to Hermes JSON. Everything else passes through unchanged.
+  ///
+  /// This is the architecture *fallback*; name-based resolution (the GGUF's `general.basename` /
+  /// `general.name`) stays the primary, version-precise signal. The fallback matters when the name
+  /// is absent or has no name-table entry (e.g. Qwen3-Next).
+  ///
+  /// **Extending this map** (e.g. when llama.cpp adds a new XML-format Qwen arch), consult:
+  ///   1. The GGUF arch *string* — copy it verbatim from llama.cpp's enum (vendored under
+  ///      `swift-llama/vendored/llama.cpp/`): `gguf-py/gguf/constants.py` → `MODEL_ARCH_NAMES`,
+  ///      mirrored in `src/llama-arch.cpp` → `LLM_ARCH_NAMES`. `convert_hf_to_gguf.py`'s
+  ///      `@ModelBase.register("<HFArchClass>")` decorators show which HF model converts to each arch.
+  ///   2. The target HF `model_type` / format — from the sglang/vLLM tool-call-parser selection that
+  ///      this file's `namePrefixes` / `typePrefixes` were ported from. Map the new arch onto whichever
+  ///      HF `model_type` already routes to the correct format in `typePrefixes`.
+  /// Most arches need no entry here — only those whose GGUF/HF spelling differs *and* changes the format.
+  package static func modelType(forGGUFArchitecture architecture: String) -> String {
+    switch architecture.lowercased() {
+      case "qwen35", "qwen35moe": "qwen3_5"
+      case "qwen3next": "qwen3_next"
+      default: architecture
+    }
+  }
+
   /// Three-signal inference. Tries the package-level name-prefix table
   /// (with longest-prefix tiebreak) first, then falls back to type-based
   /// resolution. Returns nil when neither resolves; ``ResponseFormat/json``

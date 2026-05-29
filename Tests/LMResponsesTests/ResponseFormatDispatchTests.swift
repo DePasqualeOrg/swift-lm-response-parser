@@ -378,3 +378,41 @@ struct NameWinsTests {
     #expect(f == .qwen)
   }
 }
+
+@Suite("ResponseFormat — GGUF architecture (llama backend)")
+struct ResponseFormatGGUFArchitectureTests {
+  // The llama backend feeds GGUF `general.architecture` (llama.cpp's enum), not HF `model_type`.
+  // `modelType(forGGUFArchitecture:)` bridges the two so the type fallback stays correct.
+
+  @Test
+  func `Qwen 3.5 / 3.5-MoE GGUF arch maps into the XML model_type`() {
+    #expect(ResponseFormat.modelType(forGGUFArchitecture: "qwen35") == "qwen3_5")
+    #expect(ResponseFormat.modelType(forGGUFArchitecture: "qwen35moe") == "qwen3_5")
+    #expect(ResponseFormat.resolveByType("qwen3_5", config: [:]) == .qwen3Xml)
+  }
+
+  @Test
+  func `Qwen3-Next GGUF arch maps into the XML model_type (no name-table entry)`() {
+    #expect(ResponseFormat.modelType(forGGUFArchitecture: "qwen3next") == "qwen3_next")
+    #expect(ResponseFormat.resolveByType("qwen3_next", config: [:]) == .qwen3Xml)
+  }
+
+  @Test
+  func `Non-divergent GGUF arches pass through and still resolve correctly`() {
+    #expect(ResponseFormat.modelType(forGGUFArchitecture: "qwen3") == "qwen3")
+    #expect(ResponseFormat.modelType(forGGUFArchitecture: "qwen3moe") == "qwen3moe")
+    #expect(ResponseFormat.modelType(forGGUFArchitecture: "llama") == "llama")
+    #expect(ResponseFormat.resolveByType("qwen3", config: [:]) == .qwen)
+    #expect(ResponseFormat.resolveByType("qwen3moe", config: [:]) == .qwen)
+  }
+
+  @Test
+  func `End-to-end: Qwen3.5 GGUF resolves to XML via clean name and via mapped arch`() {
+    // Primary path: clean general.basename → name table.
+    #expect(ResponseFormat.infer(modelName: "Qwen3.5", modelType: ResponseFormat.modelType(forGGUFArchitecture: "qwen35"), modelConfig: [:]) == .qwen3Xml)
+    // Fallback path: even with no usable name, the mapped architecture resolves correctly.
+    #expect(ResponseFormat.infer(modelName: "", modelType: ResponseFormat.modelType(forGGUFArchitecture: "qwen35"), modelConfig: [:]) == .qwen3Xml)
+    // The raw (unmapped) GGUF arch would have mis-resolved to Hermes — the bug this fixes.
+    #expect(ResponseFormat.resolveByType("qwen35", config: [:]) == .qwen)
+  }
+}

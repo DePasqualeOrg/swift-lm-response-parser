@@ -378,7 +378,7 @@ private func makePassEmitter(
   let resolvedFormat = format
     ?? ResponseFormat.infer(
       modelName: modelName,
-      modelType: tokenizer.model.architecture ?? "",
+      modelType: ResponseFormat.modelType(forGGUFArchitecture: tokenizer.model.architecture ?? ""),
       modelConfig: ["vocab_size": Int(tokenizer.model.vocabSize)],
     )
     ?? .json
